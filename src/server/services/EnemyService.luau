@@ -26,7 +26,7 @@ local function loadMap()
 			local wp = wpFolder:FindFirstChild(tostring(i))
 			if not wp then break end
 
-			if wp:IsA("BasePart") then
+			if wp:IsA("BasePart") or wp:IsA("MeshPart") then
 				wp.Anchored     = true
 				wp.CanCollide   = false
 				wp.CanQuery     = false
