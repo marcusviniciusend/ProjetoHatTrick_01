@@ -1,0 +1,1 @@
+-- Cole aqui o conteúdo do Client do Roblox Studio (se tiver)
