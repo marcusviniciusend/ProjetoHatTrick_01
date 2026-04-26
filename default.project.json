@@ -6,18 +6,6 @@
     "ReplicatedStorage": {
       "Shared": {
         "$path": "src/shared"
-      },
-      "Eventos": {
-        "$className": "Folder",
-        "Cmd_Construir": {
-          "$className": "RemoteEvent"
-        },
-        "Cmd_Vender": {
-          "$className": "RemoteEvent"
-        }
-      },
-      "towers": {
-        "$path": "src/towers"
       }
     },
 
