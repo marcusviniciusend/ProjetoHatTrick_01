@@ -86,12 +86,16 @@ function EnemyService:init(onRemovedCallback, onGameOverCallback)
 	end)
 end
 
-function EnemyService:_onGameOver()
-	gameStopped = true
+function EnemyService:clearAllEnemies()
 	for _, enemyObj in pairs(activeEnemies) do
 		enemyObj:destroy()
 	end
 	activeEnemies = {}
+end
+
+function EnemyService:_onGameOver()
+	gameStopped = true
+	self:clearAllEnemies()
 	if onGameOverCb then onGameOverCb() end
 end
 
@@ -126,6 +130,11 @@ end
 
 function EnemyService:setTowerProvider(fn)
 	_towerProvider = fn
+end
+
+function EnemyService:reset()
+	gameStopped = false
+	self:clearAllEnemies()
 end
 
 function EnemyService:getActive()

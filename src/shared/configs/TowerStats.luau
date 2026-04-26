@@ -3,6 +3,7 @@ export type TowerLevel = {
 	Range:       number,
 	Cooldown:    number,
 	UpgradeCost: number,
+	Color:       Color3?,   -- tint visual aplicado ao upgrade (nil = sem mudança)
 }
 
 export type TowerData = {
@@ -23,7 +24,7 @@ local TowerStats: { [string]: TowerData } = {
 		Color     = Color3.fromRGB(255, 255, 0),
 		Levels    = {
 			[1] = { Damage = 15, Range = 18, Cooldown = 1.0, UpgradeCost = 150 },
-			[2] = { Damage = 25, Range = 20, Cooldown = 0.8, UpgradeCost = 300 },
+			[2] = { Damage = 25, Range = 20, Cooldown = 0.8, UpgradeCost = 300, Color = Color3.fromRGB(255, 200, 50) },
 		},
 	},
 	["Gerador de Brainrot"] = {
@@ -34,7 +35,7 @@ local TowerStats: { [string]: TowerData } = {
 		Color     = Color3.fromRGB(0, 255, 0),
 		Levels    = {
 			[1] = { Damage = 35, Range = 24, Cooldown = 1.43, UpgradeCost = 400 },
-			[2] = { Damage = 60, Range = 28, Cooldown = 1.0,  UpgradeCost = 700 },
+			[2] = { Damage = 60, Range = 28, Cooldown = 1.0,  UpgradeCost = 700, Color = Color3.fromRGB(0, 255, 120) },
 		},
 	},
 	["Parede Neon"] = {

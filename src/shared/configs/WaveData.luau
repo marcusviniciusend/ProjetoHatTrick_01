@@ -3,6 +3,7 @@ return {
 		reward = 100,
 		groups = {
 			{ enemy = "Bung Bung",            count = 5, interval = 2.0, hp = 80,  speed = 12 },
+			{ enemy = "Bailarina Sapatina Boss", count = 1, interval = 1,   hp = 800, speed = 7  },
 			
 		},
 	},
