@@ -32,21 +32,21 @@ local function tryPlace(player, towerName, position)
 		return
 	end
 
-	if not CurrencyService:spendMoney(player, stats.Price) then
-		warn_("'%s' sem saldo para '%s' ($%d)", player.Name, towerName, stats.Price)
+	if not CurrencyService:spendMoney(player, stats.BasePrice) then
+		warn_("'%s' sem saldo para '%s' ($%d)", player.Name, towerName, stats.BasePrice)
 		return
 	end
 
 	if not towersFolder then
 		warn_("ServerStorage.towers não encontrado — devolvendo saldo")
-		CurrencyService:addMoney(player, stats.Price)
+		CurrencyService:addMoney(player, stats.BasePrice)
 		return
 	end
 
 	local template = towersFolder:FindFirstChild(towerName)
 	if not template then
 		warn_("Modelo '%s' não encontrado em ServerStorage.towers — devolvendo saldo", towerName)
-		CurrencyService:addMoney(player, stats.Price)
+		CurrencyService:addMoney(player, stats.BasePrice)
 		return
 	end
 
@@ -78,7 +78,7 @@ local function trySell(player, tower)
 	end
 
 	local stats  = TowerStats[info.towerName]
-	local refund = stats and math.floor(stats.Price * 0.5) or 0
+	local refund = stats and math.floor(stats.BasePrice * 0.5) or 0
 
 	TowerService:unregisterTower(tower)
 	placedTowers[tower] = nil

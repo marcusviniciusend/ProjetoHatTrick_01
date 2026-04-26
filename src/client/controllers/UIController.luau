@@ -53,7 +53,7 @@ end
 local function updateButtonStates(money)
 	for btn, towerName in pairs(registeredButtons) do
 		local stats  = TowerStats[towerName]
-		local canBuy = stats and money >= stats.Price
+		local canBuy = stats and money >= stats.BasePrice
 
 		btn.AutoButtonColor = canBuy
 		btn.ImageTransparency = canBuy and 0 or 0.5
