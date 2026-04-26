@@ -90,7 +90,11 @@ function UIController:init()
 		return
 	end
 
-	local painel = inventarioUI:WaitForChild("Painel")
+	local painel = inventarioUI:WaitForChild("Painel", 10)
+	if not painel then
+		warn("[UIController] Painel não encontrado no InventarioUI")
+		return
+	end
 
 	for nomeBotao, nomeTorre in pairs(BOTAO_MAP) do
 		local btn = painel:FindFirstChild(nomeBotao)

@@ -26,4 +26,5 @@ end
 return {
 	PlaceTower = getRemote("PlaceTower", "RemoteEvent"),
 	SellTower  = getRemote("SellTower",  "RemoteEvent"),
+	WaveUpdate = getRemote("WaveUpdate", "RemoteEvent"),
 }
