@@ -15,7 +15,13 @@ RunService.Heartbeat:Connect(function(dt)
 			activeTowers[model] = nil
 			continue
 		end
+
 		towerObj:update(dt, activeEnemies)
+
+		if towerObj._dead then
+			activeTowers[model] = nil
+			if model.Parent then model:Destroy() end
+		end
 	end
 end)
 
@@ -32,7 +38,12 @@ function TowerService:unregisterTower(towerModel: Model)
 	activeTowers[towerModel] = nil
 end
 
+function TowerService:getActive()
+	return activeTowers
+end
+
 function TowerService:init()
+	EnemyService:setTowerProvider(function() return activeTowers end)
 	print("[TowerService] Pronto.")
 end
 

@@ -52,8 +52,20 @@ local function tryPlace(player, towerName, position)
 
 	local clone = template:Clone()
 
+	-- Ancora todas as partes para impedir que física mova a torre
+	for _, desc in ipairs(clone:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			desc.Anchored   = true
+			desc.CanCollide = true
+		end
+	end
+	if clone.PrimaryPart then
+		clone.PrimaryPart.Anchored   = true
+		clone.PrimaryPart.CanCollide = true
+	end
+
 	if clone:IsA("Model") and clone.PrimaryPart then
-		clone:SetPrimaryPartCFrame(CFrame.new(position))
+		clone:PivotTo(CFrame.new(position))
 	elseif clone:IsA("BasePart") then
 		clone.Position = position
 	end
@@ -61,6 +73,12 @@ local function tryPlace(player, towerName, position)
 	clone.Parent = Workspace
 
 	placedTowers[clone] = { owner = player.UserId, towerName = towerName }
+
+	-- Limpeza automática quando a torre é destruída (por HP ou venda)
+	clone.Destroying:Connect(function()
+		placedTowers[clone] = nil
+	end)
+
 	TowerService:registerTower(clone, towerName)
 
 	log("'%s' colocou '%s' em %s", player.Name, towerName, tostring(position))

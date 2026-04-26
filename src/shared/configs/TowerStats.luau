@@ -8,6 +8,7 @@ export type TowerLevel = {
 export type TowerData = {
 	Name:      string,
 	BasePrice: number,
+	MaxHP:     number,
 	Size:      Vector3,
 	Color:     Color3,
 	Levels:    { [number]: TowerLevel },
@@ -17,6 +18,7 @@ local TowerStats: { [string]: TowerData } = {
 	["Toalete Basico"] = {
 		Name      = "Toalete Basico",
 		BasePrice = 100,
+		MaxHP     = 150,
 		Size      = Vector3.new(4, 4, 4),
 		Color     = Color3.fromRGB(255, 255, 0),
 		Levels    = {
@@ -27,6 +29,7 @@ local TowerStats: { [string]: TowerData } = {
 	["Gerador de Brainrot"] = {
 		Name      = "Gerador de Brainrot",
 		BasePrice = 250,
+		MaxHP     = 200,
 		Size      = Vector3.new(4, 4, 4),
 		Color     = Color3.fromRGB(0, 255, 0),
 		Levels    = {
@@ -37,6 +40,7 @@ local TowerStats: { [string]: TowerData } = {
 	["Parede Neon"] = {
 		Name      = "Parede Neon",
 		BasePrice = 75,
+		MaxHP     = 350,
 		Size      = Vector3.new(8, 4, 2),
 		Color     = Color3.fromRGB(255, 0, 255),
 		Levels    = {

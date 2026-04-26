@@ -6,12 +6,13 @@ local EnemyClass = require(script.Parent.Parent.classes.EnemyClass)
 
 local EnemyService = {}
 
-local activeEnemies = {}  -- { [Model]: EnemyClass }
-local waypoints     = {}
-local baseRef       = nil
-local onRemovedCb   = nil
-local onGameOverCb  = nil
-local gameStopped   = false
+local activeEnemies  = {}   -- { [Model]: EnemyClass }
+local waypoints      = {}
+local baseRef        = nil
+local onRemovedCb    = nil
+local onGameOverCb   = nil
+local gameStopped    = false
+local _towerProvider = nil  -- injetado por TowerService para evitar require circular
 
 -- ── Setup ──────────────────────────────────────────────────────────────────
 
@@ -73,37 +74,25 @@ function EnemyService:init(onRemovedCallback, onGameOverCallback)
 				continue
 			end
 
-			local reachedBase = enemyObj:update(dt, waypoints)
-			if reachedBase then
+			local activeTowers = _towerProvider and _towerProvider() or nil
+			local gameOver     = enemyObj:update(dt, waypoints, activeTowers, baseRef)
+			if gameOver then
 				activeEnemies[model] = nil
 				enemyObj:destroy()
-				EnemyService:_onReachedBase()
+				EnemyService:_onGameOver()
+				break
 			end
 		end
 	end)
 end
 
-function EnemyService:_onReachedBase()
-	local hp = baseRef and baseRef:FindFirstChild("HP")
-
-	if hp then
-		hp.Value = math.max(0, hp.Value - 1)
-		print(("[EnemyService] Inimigo chegou na base! HP: %d"):format(hp.Value))
-
-		if hp.Value <= 0 then
-			gameStopped = true
-			for _, enemyObj in pairs(activeEnemies) do
-				enemyObj:destroy()
-			end
-			activeEnemies = {}
-			if onGameOverCb then onGameOverCb() end
-			return
-		end
-	else
-		warn("[EnemyService] Base.HP não encontrado")
+function EnemyService:_onGameOver()
+	gameStopped = true
+	for _, enemyObj in pairs(activeEnemies) do
+		enemyObj:destroy()
 	end
-
-	if onRemovedCb then onRemovedCb() end
+	activeEnemies = {}
+	if onGameOverCb then onGameOverCb() end
 end
 
 -- ── API pública ────────────────────────────────────────────────────────────
@@ -133,6 +122,10 @@ function EnemyService:spawn(enemyName: string, statsOverride)
 	activeEnemies[clone] = enemyObj
 
 	return clone
+end
+
+function EnemyService:setTowerProvider(fn)
+	_towerProvider = fn
 end
 
 function EnemyService:getActive()
