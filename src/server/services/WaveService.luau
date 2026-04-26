@@ -81,8 +81,13 @@ function WaveService:startWave(waveNumber)
 		return
 	end
 
+	local totalToSpawn = 0
+	for _, group in ipairs(waveData.groups) do
+		totalToSpawn += group.count
+	end
+
 	currentWave    = waveNumber
-	totalSpawned   = 0
+	totalSpawned   = totalToSpawn
 	totalRemoved   = 0
 	waveInProgress = true
 
@@ -94,7 +99,7 @@ function WaveService:startWave(waveNumber)
 			for _ = 1, group.count do
 				if gameEnded then return end
 				local enemy = EnemyService:spawn(group.enemy, { hp = group.hp, speed = group.speed })
-				if enemy then totalSpawned += 1 end
+				if not enemy then totalSpawned -= 1 end
 				if group.interval > 0 then task.wait(group.interval) end
 			end
 		end

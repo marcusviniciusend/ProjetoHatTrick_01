@@ -126,7 +126,7 @@ function EnemyService:spawn(enemyName: string, statsOverride)
 	end
 
 	local spawnPos = waypoints[1].Position + Vector3.new(0, clone.PrimaryPart.Size.Y / 2, 0)
-	clone:SetPrimaryPartCFrame(CFrame.new(spawnPos))
+	clone:PivotTo(CFrame.new(spawnPos))
 	clone.Parent = Workspace
 
 	local enemyObj = EnemyClass.new(clone, enemyName, statsOverride)

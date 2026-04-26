@@ -83,7 +83,7 @@ function EnemyClass:update(dt: number, waypoints: { BasePart }): boolean
 		local newCF   = lookDir.Magnitude > 0.01
 			and CFrame.new(newPos, newPos + lookDir)
 			or  CFrame.new(newPos)
-		self.model:SetPrimaryPartCFrame(newCF)
+		self.model:PivotTo(newCF)
 	end
 
 	return false
