@@ -118,11 +118,29 @@ function EnemyService:spawn(enemyName: string, statsOverride)
 		return nil
 	end
 
-	local spawnPos = waypoints[1].Position + Vector3.new(0, clone.PrimaryPart.Size.Y / 2, 0)
-	clone:PivotTo(CFrame.new(spawnPos))
+	-- Movimento é feito via PivotTo; física simulada causaria arremesso ao spawnar
+	for _, part in ipairs(clone:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored   = true
+			part.CanCollide = false
+		end
+	end
+
+	-- Parear ANTES de GetBoundingBox: em modelos não-pareados o método pode
+	-- retornar espaço de objeto em vez de espaço de mundo.
+	-- Tudo já está ancorado + CanCollide=false, então a física não age.
 	clone.Parent = Workspace
 
-	local enemyObj = EnemyClass.new(clone, enemyName, statsOverride)
+	-- Distância do pivot até a borda inferior real do modelo no mundo.
+	local boundCF, boundSize = clone:GetBoundingBox()
+	local pivotY          = clone:GetPivot().Position.Y
+	local bottomY         = boundCF.Position.Y - boundSize.Y / 2
+	local pivotAboveFloor = pivotY - bottomY  -- offset relativo, invariante após PivotTo
+
+	local wp1      = waypoints[1].Position
+	clone:PivotTo(CFrame.new(wp1.X, wp1.Y + pivotAboveFloor, wp1.Z))
+
+	local enemyObj = EnemyClass.new(clone, enemyName, pivotAboveFloor, statsOverride)
 	activeEnemies[clone] = enemyObj
 
 	return clone

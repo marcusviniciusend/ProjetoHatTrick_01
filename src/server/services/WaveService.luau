@@ -12,7 +12,7 @@ local PlacementService = require(script.Parent.PlacementService)
 
 local WaveService = {}
 
-local BETWEEN_WAVES = 20  -- segundos entre waves durante CombatPhase
+local BETWEEN_WAVES = 5   -- segundos entre waves durante CombatPhase
 
 local TOTAL_WAVES = 0
 for _ in pairs(WaveData) do TOTAL_WAVES += 1 end

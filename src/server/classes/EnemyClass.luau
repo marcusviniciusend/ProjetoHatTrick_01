@@ -38,7 +38,7 @@ local function findBlockingTower(myPos: Vector3, waypointPos: Vector3, activeTow
 	return closest
 end
 
-function EnemyClass.new(model: Model, enemyName: string, statsOverride: StatsOverride)
+function EnemyClass.new(model: Model, enemyName: string, pivotAboveFloor: number, statsOverride: StatsOverride)
 	local data = EnemyStats[enemyName]
 	assert(data, ("[EnemyClass] '%s' não encontrado em EnemyStats"):format(enemyName))
 
@@ -57,6 +57,7 @@ function EnemyClass.new(model: Model, enemyName: string, statsOverride: StatsOve
 		waypointIndex  = 1,
 		_attackTimer   = 0,
 		_dead          = false,
+		_pivotAboveFloor = pivotAboveFloor,
 	}, EnemyClass)
 
 	local curVal       = Instance.new("IntValue")
@@ -167,7 +168,7 @@ function EnemyClass:update(dt: number, waypoints: { BasePart }, activeTowers, ba
 	end
 
 	-- Movimento normal em direção ao waypoint
-	local target  = wp.Position + Vector3.new(0, primary.Size.Y / 2, 0)
+	local target  = wp.Position + Vector3.new(0, self._pivotAboveFloor, 0)
 	local current = primary.Position
 	local dir     = target - current
 	local dist2D  = Vector2.new(dir.X, dir.Z).Magnitude
