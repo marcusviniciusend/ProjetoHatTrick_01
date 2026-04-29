@@ -87,6 +87,11 @@ function PlotService:getPlot(player: Player)
 	return nil
 end
 
+-- Retorna o UserId do player dono do plot, ou nil se não tiver dono.
+function PlotService:getOwnerUserId(plot)
+	return plotOwners[plot]
+end
+
 -- Retorna lista de todos os plots que têm um player atribuído.
 function PlotService:getActivePlots()
 	local plots = {}

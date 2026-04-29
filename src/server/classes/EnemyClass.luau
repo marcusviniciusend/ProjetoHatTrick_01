@@ -38,7 +38,7 @@ local function findBlockingTower(myPos: Vector3, waypointPos: Vector3, activeTow
 	return closest
 end
 
-function EnemyClass.new(model: Model, enemyName: string, pivotAboveFloor: number, statsOverride: StatsOverride)
+function EnemyClass.new(model: Model, enemyName: string, pivotAboveFloor: number, targetPlot: Model, statsOverride: StatsOverride)
 	local data = EnemyStats[enemyName]
 	assert(data, ("[EnemyClass] '%s' não encontrado em EnemyStats"):format(enemyName))
 
@@ -46,18 +46,20 @@ function EnemyClass.new(model: Model, enemyName: string, pivotAboveFloor: number
 	local speed = (statsOverride and statsOverride.speed) or data.Speed
 
 	local self = setmetatable({
-		model          = model,
-		name           = enemyName,
-		hp             = hp,
-		maxHp          = hp,
-		speed          = speed,
-		reward         = data.Reward,
-		damage         = data.Damage,
-		attackCooldown = data.AttackCooldown,
-		waypointIndex  = 1,
-		_attackTimer   = 0,
-		_dead          = false,
+		model            = model,
+		name             = enemyName,
+		hp               = hp,
+		maxHp            = hp,
+		speed            = speed,
+		reward           = data.Reward,
+		damage           = data.Damage,
+		attackCooldown   = data.AttackCooldown,
+		waypointIndex    = 1,
+		_attackTimer     = 0,
+		_dead            = false,
 		_pivotAboveFloor = pivotAboveFloor,
+		targetPlot       = targetPlot,  -- plot que este inimigo está atacando
+		onDied           = nil,         -- (reward: number, targetPlot: Model) → void; setado pelo EnemyService
 	}, EnemyClass)
 
 	local curVal       = Instance.new("IntValue")
@@ -75,7 +77,8 @@ function EnemyClass.new(model: Model, enemyName: string, pivotAboveFloor: number
 	return self
 end
 
--- Returns true when the enemy has just died
+-- Aplica dano. Quando HP chega a 0 emite onDied(reward, targetPlot) e marca _dead.
+-- Quem deu o golpe final é irrelevante — a recompensa sempre vai para o dono do plot.
 function EnemyClass:takeDamage(amount: number): boolean
 	if self._dead then return true end
 
@@ -86,6 +89,9 @@ function EnemyClass:takeDamage(amount: number): boolean
 
 	if self.hp <= 0 then
 		self._dead = true
+		if self.onDied then
+			self.onDied(self.reward, self.targetPlot)
+		end
 	end
 
 	return self._dead

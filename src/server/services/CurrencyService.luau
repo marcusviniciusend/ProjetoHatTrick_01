@@ -1,5 +1,7 @@
 local Players = game:GetService("Players")
 
+local PlotService = require(script.Parent.PlotService)
+
 local CurrencyService = {}
 
 local STARTING_MONEY = 500
@@ -33,6 +35,17 @@ function CurrencyService:addMoney(player, amount)
 	local ls = player:FindFirstChild("leaderstats")
 	if ls and ls:FindFirstChild("Money") then
 		ls.Money.Value += amount
+	end
+end
+
+-- Credita `amount` exclusivamente para o dono do plot.
+-- Ignoramos quem deu o golpe final — a recompensa pertence a quem defende aquela base.
+function CurrencyService:rewardForPlot(plot, amount: number)
+	local userId = PlotService:getOwnerUserId(plot)
+	if not userId then return end
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		self:addMoney(player, amount)
 	end
 end
 

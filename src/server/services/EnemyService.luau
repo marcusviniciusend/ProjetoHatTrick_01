@@ -2,7 +2,8 @@ local RunService    = game:GetService("RunService")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace     = game:GetService("Workspace")
 
-local EnemyClass = require(script.Parent.Parent.classes.EnemyClass)
+local EnemyClass      = require(script.Parent.Parent.classes.EnemyClass)
+local CurrencyService = require(script.Parent.CurrencyService)
 
 local EnemyService = {}
 
@@ -176,7 +177,10 @@ function EnemyService:spawn(enemyName: string, plot: Model, statsOverride)
 	local wp1 = pData.waypoints[1].Position
 	clone:PivotTo(CFrame.new(wp1.X, wp1.Y + pivotAboveFloor, wp1.Z))
 
-	local enemyObj = EnemyClass.new(clone, enemyName, pivotAboveFloor, statsOverride)
+	local enemyObj = EnemyClass.new(clone, enemyName, pivotAboveFloor, plot, statsOverride)
+	enemyObj.onDied = function(reward: number, targetPlot: Model)
+		CurrencyService:rewardForPlot(targetPlot, reward)
+	end
 	activeEnemies[clone] = { obj = enemyObj, plot = plot }
 
 	return clone
