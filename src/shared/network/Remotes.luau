@@ -24,11 +24,12 @@ local function getRemote(name, className)
 end
 
 return {
-	PlaceTower        = getRemote("PlaceTower",        "RemoteEvent"),
-	SellTower         = getRemote("SellTower",         "RemoteEvent"),
-	WaveUpdate        = getRemote("WaveUpdate",        "RemoteEvent"),
-	RequestWaveStart  = getRemote("RequestWaveStart",  "RemoteEvent"),
-	RequestWaveEnd    = getRemote("RequestWaveEnd",    "RemoteEvent"),
-	PhaseChanged      = getRemote("PhaseChanged",      "RemoteEvent"),
+	PlaceTower         = getRemote("PlaceTower",         "RemoteEvent"),
+	SellTower          = getRemote("SellTower",          "RemoteEvent"),
+	WaveUpdate         = getRemote("WaveUpdate",         "RemoteEvent"),
+	RequestWaveStart   = getRemote("RequestWaveStart",   "RemoteEvent"),
+	RequestWaveEnd     = getRemote("RequestWaveEnd",     "RemoteEvent"),
+	PhaseChanged       = getRemote("PhaseChanged",       "RemoteEvent"),
 	RequestTowerAction = getRemote("RequestTowerAction", "RemoteFunction"),
+	PlotAssigned       = getRemote("PlotAssigned",       "RemoteEvent"),
 }

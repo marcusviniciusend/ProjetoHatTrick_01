@@ -1,31 +1,38 @@
-local Players   = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
+local Players           = game:GetService("Players")
+local Workspace         = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Remotes = require(ReplicatedStorage:WaitForChild("Shared").network.Remotes)
 
 local PlotService = {}
 
-local availablePlots = {}          -- { BasePart | Model }
-local plotOwners     = {}          -- { [plot] = userId }
+local availablePlots = {}   -- { Model | BasePart } ordenados por nome
+local plotOwners     = {}   -- { [plot] = userId }
 
 -- ── Setup ──────────────────────────────────────────────────────────────────
 
 function PlotService:init()
 	local map = Workspace:WaitForChild("Map", 10)
 	if not map then
-		warn("[PlotService] Workspace.Map não encontrado — crie a pasta no Studio")
+		warn("[PlotService] Workspace.Map não encontrado")
 		return
 	end
 
 	local plotsFolder = map:WaitForChild("Plots", 10)
 	if not plotsFolder then
-		warn("[PlotService] Workspace.Map.Plots não encontrado — crie a pasta no Studio")
+		warn("[PlotService] Workspace.Map.Plots não encontrado")
 		return
 	end
 
-	for _, plot in ipairs(plotsFolder:GetChildren()) do
-		if plot:IsA("BasePart") or plot:IsA("Model") then
-			table.insert(availablePlots, plot)
+	-- Coleta plots e ordena por nome (Plot1, Plot2, …) para atribuição consistente
+	local collected = {}
+	for _, child in ipairs(plotsFolder:GetChildren()) do
+		if child:IsA("Model") or child:IsA("BasePart") then
+			table.insert(collected, child)
 		end
 	end
+	table.sort(collected, function(a, b) return a.Name < b.Name end)
+	availablePlots = collected
 
 	print(("[PlotService] %d plot(s) carregado(s)"):format(#availablePlots))
 
@@ -37,7 +44,7 @@ function PlotService:init()
 		self:releasePlot(player)
 	end)
 
-	-- Cobre players já conectados (teste em Studio com servidor local)
+	-- Cobre players já conectados (teste local no Studio)
 	for _, player in ipairs(Players:GetPlayers()) do
 		task.spawn(function() self:claimPlot(player) end)
 	end
@@ -45,19 +52,22 @@ end
 
 -- ── API pública ────────────────────────────────────────────────────────────
 
-function PlotService:claimPlot(player)
+-- Atribui o primeiro plot livre ao player e notifica o cliente.
+function PlotService:claimPlot(player: Player)
 	for _, plot in ipairs(availablePlots) do
 		if not plotOwners[plot] then
 			plotOwners[plot] = player.UserId
-			print(("[PlotService] '%s' recebeu o plot '%s'"):format(player.Name, plot.Name))
+			print(("[PlotService] '%s' recebeu '%s'"):format(player.Name, plot.Name))
+			Remotes.PlotAssigned:FireClient(player, plot)
 			return plot
 		end
 	end
-	warn(("[PlotService] Sem plots disponíveis para '%s'"):format(player.Name))
+	warn(("[PlotService] Nenhum plot livre para '%s' — adicione mais modelos em Map.Plots"):format(player.Name))
 	return nil
 end
 
-function PlotService:releasePlot(player)
+-- Libera o plot do player que saiu.
+function PlotService:releasePlot(player: Player)
 	for plot, userId in pairs(plotOwners) do
 		if userId == player.UserId then
 			plotOwners[plot] = nil
@@ -67,7 +77,8 @@ function PlotService:releasePlot(player)
 	end
 end
 
-function PlotService:getPlot(player)
+-- Retorna o plot atribuído ao player, ou nil.
+function PlotService:getPlot(player: Player)
 	for plot, userId in pairs(plotOwners) do
 		if userId == player.UserId then
 			return plot
@@ -76,8 +87,18 @@ function PlotService:getPlot(player)
 	return nil
 end
 
--- Verifica se 'position' está dentro da área do plot do player
-function PlotService:isInsidePlot(player, position)
+-- Retorna lista de todos os plots que têm um player atribuído.
+function PlotService:getActivePlots()
+	local plots = {}
+	for plot in pairs(plotOwners) do
+		table.insert(plots, plot)
+	end
+	return plots
+end
+
+-- Verifica se 'position' está dentro da bounding box XZ do plot do player.
+-- Usado pelo PlacementService como trava de segurança server-side.
+function PlotService:isInsidePlot(player: Player, position: Vector3): boolean
 	local plot = self:getPlot(player)
 	if not plot then return false end
 
@@ -90,10 +111,10 @@ function PlotService:isInsidePlot(player, position)
 		return false
 	end
 
-	local local_pos = cf:PointToObjectSpace(position)
-	local half      = size / 2
-	return math.abs(local_pos.X) <= half.X
-		and math.abs(local_pos.Z) <= half.Z
+	local localPos = cf:PointToObjectSpace(position)
+	local half     = size / 2
+	return math.abs(localPos.X) <= half.X
+		and math.abs(localPos.Z) <= half.Z
 end
 
 return PlotService

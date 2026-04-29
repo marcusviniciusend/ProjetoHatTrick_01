@@ -7,40 +7,54 @@ local Remotes = require(ReplicatedStorage.Shared.network.Remotes)
 
 local PlacementController = {}
 
-local GRID_SIZE   = 4
-local ALTURA_CHAO = 2
+local GRID_SIZE = 6  -- cada slot tem 6x6 studs
 
-local player      = Players.LocalPlayer
+local player    = Players.LocalPlayer
 local mouse       = player:GetMouse()
 local workspace   = game:GetService("Workspace")
 
 -- Pasta de torres em ReplicatedStorage (mesma usada pelo servidor)
 local towersFolder = ReplicatedStorage:FindFirstChild("towers")
 
-local blocoFantasma     = nil  -- Part genérico (modo delete / fallback)
-local ghostModel        = nil  -- Modelo 3D real da torre selecionada
+local blocoFantasma       = nil   -- Part genérico (modo delete / fallback)
+local ghostModel          = nil   -- Modelo 3D real da torre selecionada
+local ghostHeightOffset   = 0     -- distância do pivot até a base do ghost (recalculada por modelo)
+local assignedPlot        = nil   -- Model do plot atribuído a este player (recebido do servidor)
 local modoConstrucaoAtivo = false
 local modoDeletarAtivo    = false
 local torreSelecionada    = nil
 
 -- ── Helpers ────────────────────────────────────────────────────────────────
 
-local function snapToGrid(pos)
+-- Retorna o plotQuad sob o cursor SOMENTE se ele pertencer ao plot atribuído a este player.
+-- Isso previne que o ghost apareça verde no plot de um vizinho.
+local function getHoveredQuad(): BasePart?
+	if not assignedPlot then return nil end
+	local target = mouse.Target
+	if target and target.Name == "plotQuad" and target:IsDescendantOf(assignedPlot) then
+		return target :: BasePart
+	end
+	return nil
+end
+
+-- Snap ao centro do plotQuad do player; fallback para grade se não houver
+local function getSnapPosition(): Vector3
+	local quad = getHoveredQuad()
+	if quad then
+		local topY = quad.Position.Y + quad.Size.Y / 2
+		return Vector3.new(quad.Position.X, topY + ghostHeightOffset, quad.Position.Z)
+	end
+	local pos = mouse.Hit.Position
 	return Vector3.new(
 		math.round(pos.X / GRID_SIZE) * GRID_SIZE,
-		ALTURA_CHAO,
+		pos.Y + ghostHeightOffset,
 		math.round(pos.Z / GRID_SIZE) * GRID_SIZE
 	)
 end
 
--- Verifica se o mouse está sobre um plot válido (parte do Map.Plots)
+-- Válido somente quando o cursor está sobre um plotQuad DO PLAYER
 local function isMouseOnPlot(): boolean
-	local target = mouse.Target
-	if not target then return false end
-	local map   = workspace:FindFirstChild("Map")
-	local plots = map and map:FindFirstChild("Plots")
-	if not plots then return true end  -- sem plots configurados: assume válido
-	return target:IsDescendantOf(plots)
+	return getHoveredQuad() ~= nil
 end
 
 local function destroyGhost()
@@ -48,6 +62,7 @@ local function destroyGhost()
 		ghostModel:Destroy()
 		ghostModel = nil
 	end
+	ghostHeightOffset = 0
 end
 
 local function makeGhostFor(towerName: string)
@@ -77,6 +92,14 @@ local function makeGhostFor(towerName: string)
 	end
 
 	ghostModel.Parent = workspace
+
+	-- Distância do pivot (PrimaryPart center) até a borda inferior do modelo.
+	-- Garante que a torre grude na superfície do slot independente da estrutura do modelo.
+	if ghostModel.PrimaryPart then
+		local bCF, bSize  = ghostModel:GetBoundingBox()
+		local pivotY      = ghostModel:GetPivot().Position.Y
+		ghostHeightOffset = pivotY - (bCF.Position.Y - bSize.Y / 2)
+	end
 end
 
 local function setGhostColor(valid: boolean)
@@ -96,6 +119,11 @@ end
 -- ── Init ───────────────────────────────────────────────────────────────────
 
 function PlacementController:init()
+	-- Recebe do servidor qual plot pertence a este player
+	Remotes.PlotAssigned.OnClientEvent:Connect(function(plot)
+		assignedPlot = plot
+	end)
+
 	-- Bloco genérico: usado no modo delete e como fallback se ghostModel não existe
 	blocoFantasma              = Instance.new("Part")
 	blocoFantasma.Name         = "GhostPreview"
@@ -109,7 +137,7 @@ function PlacementController:init()
 
 	RunService.RenderStepped:Connect(function()
 		if not mouse.Hit then return end
-		local snapped = snapToGrid(mouse.Hit.Position)
+		local snapped = getSnapPosition()
 
 		if modoConstrucaoAtivo then
 			if ghostModel and ghostModel.PrimaryPart then
