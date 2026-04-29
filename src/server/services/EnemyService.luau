@@ -4,6 +4,7 @@ local Workspace     = game:GetService("Workspace")
 
 local EnemyClass      = require(script.Parent.Parent.classes.EnemyClass)
 local CurrencyService = require(script.Parent.CurrencyService)
+local PhysicsService  = require(script.Parent.PhysicsService)
 
 local EnemyService = {}
 
@@ -169,6 +170,7 @@ function EnemyService:spawn(enemyName: string, plot: Model, statsOverride)
 
 	-- Parear antes de GetBoundingBox para garantir coordenadas de mundo corretas
 	clone.Parent = Workspace
+	PhysicsService:assignToGroup(clone, "Enemies")
 
 	local boundCF, boundSize = clone:GetBoundingBox()
 	local pivotY          = clone:GetPivot().Position.Y

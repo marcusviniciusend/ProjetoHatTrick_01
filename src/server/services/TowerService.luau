@@ -1,7 +1,8 @@
 local RunService = game:GetService("RunService")
 
-local TowerClass   = require(script.Parent.Parent.classes.TowerClass)
-local EnemyService = require(script.Parent.EnemyService)
+local TowerClass     = require(script.Parent.Parent.classes.TowerClass)
+local EnemyService   = require(script.Parent.EnemyService)
+local PhysicsService = require(script.Parent.PhysicsService)
 
 local TowerService = {}
 
@@ -32,6 +33,7 @@ function TowerService:registerTower(towerModel: Model, towerName: string, level:
 		return
 	end
 	activeTowers[towerModel] = result
+	PhysicsService:assignToGroup(towerModel, "Towers")
 end
 
 function TowerService:unregisterTower(towerModel: Model)

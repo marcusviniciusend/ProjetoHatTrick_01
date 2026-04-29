@@ -1,33 +1,38 @@
+local CollectionService = game:GetService("CollectionService")
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
-local UserInputService  = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace         = game:GetService("Workspace")
 
 local Remotes = require(ReplicatedStorage.Shared.network.Remotes)
 
 local PlacementController = {}
 
-local GRID_SIZE = 6  -- cada slot tem 6x6 studs
+local GRID_SIZE  = 6          -- cada slot tem 6x6 studs
+local TOWER_TAG  = "Tower"
 
-local player    = Players.LocalPlayer
-local mouse       = player:GetMouse()
-local workspace   = game:GetService("Workspace")
+-- Substitua pelo assetId do cursor de deleção desejado (imagem 64×64 carregada no Roblox).
+-- Exemplo: "rbxassetid://SUA_ID_AQUI"
+-- Deixe em "" para usar o cursor padrão enquanto o asset não estiver disponível.
+local DELETE_CURSOR_ID = ""
 
--- Pasta de torres em ReplicatedStorage (mesma usada pelo servidor)
+local player   = Players.LocalPlayer
+local mouse    = player:GetMouse()
+
 local towersFolder = ReplicatedStorage:FindFirstChild("towers")
 
-local blocoFantasma       = nil   -- Part genérico (modo delete / fallback)
-local ghostModel          = nil   -- Modelo 3D real da torre selecionada
-local ghostHeightOffset   = 0     -- distância do pivot até a base do ghost (recalculada por modelo)
-local assignedPlot        = nil   -- Model do plot atribuído a este player (recebido do servidor)
+local blocoFantasma     = nil
+local ghostModel        = nil
+local ghostHeightOffset = 0
+local assignedPlot      = nil
+local deleteHighlight   = nil   -- Highlight aplicado à torre sob o cursor no modo deletar
+
 local modoConstrucaoAtivo = false
 local modoDeletarAtivo    = false
 local torreSelecionada    = nil
 
 -- ── Helpers ────────────────────────────────────────────────────────────────
 
--- Retorna o plotQuad sob o cursor SOMENTE se ele pertencer ao plot atribuído a este player.
--- Isso previne que o ghost apareça verde no plot de um vizinho.
 local function getHoveredQuad(): BasePart?
 	if not assignedPlot then return nil end
 	local target = mouse.Target
@@ -37,7 +42,6 @@ local function getHoveredQuad(): BasePart?
 	return nil
 end
 
--- Snap ao centro do plotQuad do player; fallback para grade se não houver
 local function getSnapPosition(): Vector3
 	local quad = getHoveredQuad()
 	if quad then
@@ -52,9 +56,47 @@ local function getSnapPosition(): Vector3
 	)
 end
 
--- Válido somente quando o cursor está sobre um plotQuad DO PLAYER
 local function isMouseOnPlot(): boolean
 	return getHoveredQuad() ~= nil
+end
+
+-- Verifica se a PrimaryPart de um modelo está dentro da bounding box XZ do plot atribuído.
+-- Torres ficam diretamente em Workspace (não dentro do plot), por isso usamos posição.
+local function isModelOnMyPlot(model: Model): boolean
+	if not assignedPlot then return false end
+	local pp = model.PrimaryPart
+	if not pp then return false end
+
+	local cf, size
+	if assignedPlot:IsA("BasePart") then
+		cf, size = assignedPlot.CFrame, assignedPlot.Size
+	elseif assignedPlot:IsA("Model") then
+		cf, size = assignedPlot:GetBoundingBox()
+	else
+		return false
+	end
+
+	local localPos = cf:PointToObjectSpace(pp.Position)
+	local half     = size / 2
+	return math.abs(localPos.X) <= half.X and math.abs(localPos.Z) <= half.Z
+end
+
+-- Retorna o Model da torre sob o cursor, SE ela pertencer ao plot do player. Nil caso contrário.
+local function getHoveredTowerOnMyPlot(): Model?
+	local target = mouse.Target
+	if not target then return nil end
+
+	local model = target
+	while model and not model:IsA("Model") do
+		model = model.Parent
+	end
+
+	if model
+		and CollectionService:HasTag(model, TOWER_TAG)
+		and isModelOnMyPlot(model) then
+		return model :: Model
+	end
+	return nil
 end
 
 local function destroyGhost()
@@ -91,10 +133,8 @@ local function makeGhostFor(towerName: string)
 		ghostModel.PrimaryPart.Transparency = 0.5
 	end
 
-	ghostModel.Parent = workspace
+	ghostModel.Parent = Workspace
 
-	-- Distância do pivot (PrimaryPart center) até a borda inferior do modelo.
-	-- Garante que a torre grude na superfície do slot independente da estrutura do modelo.
 	if ghostModel.PrimaryPart then
 		local bCF, bSize  = ghostModel:GetBoundingBox()
 		local pivotY      = ghostModel:GetPivot().Position.Y
@@ -116,15 +156,20 @@ local function hideAll()
 	destroyGhost()
 end
 
+local function clearDeleteHighlight()
+	if deleteHighlight then
+		deleteHighlight.Adornee = nil
+		deleteHighlight.Enabled = false
+	end
+end
+
 -- ── Init ───────────────────────────────────────────────────────────────────
 
 function PlacementController:init()
-	-- Recebe do servidor qual plot pertence a este player
 	Remotes.PlotAssigned.OnClientEvent:Connect(function(plot)
 		assignedPlot = plot
 	end)
 
-	-- Bloco genérico: usado no modo delete e como fallback se ghostModel não existe
 	blocoFantasma              = Instance.new("Part")
 	blocoFantasma.Name         = "GhostPreview"
 	blocoFantasma.Anchored     = true
@@ -133,13 +178,23 @@ function PlacementController:init()
 	blocoFantasma.CastShadow   = false
 	blocoFantasma.Material     = Enum.Material.Neon
 	blocoFantasma.Transparency = 1
-	blocoFantasma.Parent       = workspace
+	blocoFantasma.Parent       = Workspace
+
+	-- Highlight para indicar a torre que será deletada
+	deleteHighlight                   = Instance.new("Highlight")
+	deleteHighlight.Name              = "DeleteHighlight"
+	deleteHighlight.FillColor         = Color3.fromRGB(220, 50, 50)
+	deleteHighlight.FillTransparency  = 0.55
+	deleteHighlight.OutlineColor      = Color3.fromRGB(255, 120, 0)
+	deleteHighlight.OutlineTransparency = 0
+	deleteHighlight.Enabled           = false
+	deleteHighlight.Parent            = Workspace
 
 	RunService.RenderStepped:Connect(function()
 		if not mouse.Hit then return end
-		local snapped = getSnapPosition()
 
 		if modoConstrucaoAtivo then
+			local snapped = getSnapPosition()
 			if ghostModel and ghostModel.PrimaryPart then
 				ghostModel:PivotTo(CFrame.new(snapped))
 				setGhostColor(isMouseOnPlot())
@@ -148,18 +203,14 @@ function PlacementController:init()
 			end
 
 		elseif modoDeletarAtivo then
-			blocoFantasma.Position = snapped
-		end
-	end)
-
-	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then return end
-		if input.KeyCode == Enum.KeyCode.Q then
-			self:toggleBuildMode()
-		elseif input.KeyCode == Enum.KeyCode.X then
-			self:toggleDeleteMode()
-		elseif input.KeyCode == Enum.KeyCode.Escape then
-			self:cancelPlacement()
+			-- Hover highlight: realça a torre do player sob o cursor
+			local tower = getHoveredTowerOnMyPlot()
+			if tower then
+				deleteHighlight.Adornee = tower
+				deleteHighlight.Enabled = true
+			else
+				clearDeleteHighlight()
+			end
 		end
 	end)
 
@@ -169,6 +220,15 @@ function PlacementController:init()
 				and ghostModel.PrimaryPart.Position
 				or blocoFantasma.Position
 			Remotes.PlaceTower:FireServer(torreSelecionada, pos)
+
+		elseif modoDeletarAtivo then
+			local tower = getHoveredTowerOnMyPlot()
+			if tower then
+				-- Deleção = venda instantânea (50% de reembolso, validado no servidor)
+				task.spawn(function()
+					Remotes.RequestTowerAction:InvokeServer(tower, "Sell")
+				end)
+			end
 		end
 	end)
 end
@@ -182,7 +242,6 @@ function PlacementController:selectTower(towerName: string, size: Vector3?, colo
 
 	makeGhostFor(towerName)
 
-	-- Fallback: bloco genérico se não há modelo 3D
 	if not ghostModel then
 		blocoFantasma.Size         = size  or Vector3.new(4, 4, 4)
 		blocoFantasma.Color        = color or Color3.fromRGB(0, 255, 0)
@@ -212,10 +271,16 @@ end
 function PlacementController:toggleDeleteMode()
 	modoConstrucaoAtivo = false
 	destroyGhost()
-	torreSelecionada  = nil
-	modoDeletarAtivo  = not modoDeletarAtivo
-	blocoFantasma.Color        = Color3.fromRGB(255, 0, 0)
-	blocoFantasma.Transparency = modoDeletarAtivo and 0.8 or 1
+	torreSelecionada = nil
+	modoDeletarAtivo = not modoDeletarAtivo
+	blocoFantasma.Transparency = 1   -- blocoFantasma não é usado no modo deletar
+
+	if modoDeletarAtivo then
+		mouse.Icon = DELETE_CURSOR_ID
+	else
+		mouse.Icon = ""
+		clearDeleteHighlight()
+	end
 end
 
 function PlacementController:setLocked(locked: boolean)
@@ -223,12 +288,23 @@ function PlacementController:setLocked(locked: boolean)
 		modoConstrucaoAtivo = false
 		modoDeletarAtivo    = false
 		torreSelecionada    = nil
+		mouse.Icon          = ""
+		clearDeleteHighlight()
 		hideAll()
 	end
 end
 
 function PlacementController:isBuildModeActive(): boolean
 	return modoConstrucaoAtivo or modoDeletarAtivo
+end
+
+function PlacementController:resetAll()
+	modoConstrucaoAtivo = false
+	modoDeletarAtivo    = false
+	torreSelecionada    = nil
+	mouse.Icon          = ""
+	clearDeleteHighlight()
+	hideAll()
 end
 
 return PlacementController

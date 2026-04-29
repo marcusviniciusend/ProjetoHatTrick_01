@@ -2,16 +2,12 @@ local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
 
-local Remotes  = require(ReplicatedStorage.Shared.network.Remotes)
-local WaveData = require(ReplicatedStorage.Shared.configs.WaveData)
+local Remotes = require(ReplicatedStorage.Shared.network.Remotes)
 
 local HUDController = {}
 
 local player = Players.LocalPlayer
 local gui    = player:WaitForChild("PlayerGui")
-
-local TOTAL_WAVES = 0
-for _ in pairs(WaveData) do TOTAL_WAVES += 1 end
 
 local waveLabel, waveStatusLabel, baseHPLabel, moneyLabel
 local gameEndFrame, titleLabel, subLabel, restartButton
@@ -32,7 +28,7 @@ local function startCountdown(seconds)
 	countdownThread = task.spawn(function()
 		for remaining = seconds, 1, -1 do
 			if waveStatusLabel then
-				waveStatusLabel.Text = ("Proxima wave em %ds"):format(remaining)
+				waveStatusLabel.Text = ("Próxima wave em %ds"):format(remaining)
 			end
 			task.wait(1)
 		end
@@ -41,59 +37,44 @@ end
 
 -- ── Game End overlay ───────────────────────────────────────────────────────
 
-local function showGameEnd(isVictory, wave)
+local function showGameEnd(wave)
 	stopCountdown()
-	if not gameEndFrame then
-		warn("[HUDController] GameEndFrame é nil — verifique se existe no HudUI")
-		return
-	end
-	if titleLabel then
-		titleLabel.Text = isVictory and "VITÓRIA!" or "DERROTA!"
-	end
-	if subLabel then
-		subLabel.Text = isVictory
-			and ("Você resistiu a todas as %d waves!"):format(TOTAL_WAVES)
-			or  ("Sua base foi destruída na wave %d / %d"):format(wave, TOTAL_WAVES)
-	end
+	if not gameEndFrame then return end
+	if titleLabel then titleLabel.Text = "DERROTA!" end
+	if subLabel   then subLabel.Text   = ("Base destruída na wave %d"):format(wave) end
 	gameEndFrame.Visible = true
 end
 
 -- ── Eventos de wave ────────────────────────────────────────────────────────
 
 local function onWaveUpdate(data)
-	if not waveLabel then return end
-
 	if data.type == "buildphase" then
-		waveLabel.Text       = ("Wave - / %d"):format(data.total)
-		waveStatusLabel.Text = "Fase de Construção"
+		if waveLabel      then waveLabel.Text       = "Wave —" end
+		if waveStatusLabel then waveStatusLabel.Text = "Fase de Construção" end
 
 	elseif data.type == "combatstart" then
-		waveLabel.Text       = ("Wave - / %d"):format(data.total)
-		waveStatusLabel.Text = "Iniciando combate..."
+		if waveLabel      then waveLabel.Text       = "Wave —" end
+		if waveStatusLabel then waveStatusLabel.Text = "Iniciando combate..." end
 
 	elseif data.type == "started" then
 		stopCountdown()
-		waveLabel.Text       = ("Wave %d / %d"):format(data.wave, data.total)
-		waveStatusLabel.Text = "EM ANDAMENTO"
+		local boss = data.isBoss and "  [BOSS]" or ""
+		if waveLabel      then waveLabel.Text       = ("Wave %d%s"):format(data.wave, boss) end
+		if waveStatusLabel then waveStatusLabel.Text = "EM ANDAMENTO" end
 
 	elseif data.type == "ended" then
-		waveLabel.Text = ("Wave %d / %d"):format(data.wave, data.total)
-		startCountdown(data.countdown)
-
-	elseif data.type == "victory" then
-		waveLabel.Text       = ("Wave %d / %d"):format(data.wave, data.total)
-		waveStatusLabel.Text = "VITÓRIA!"
-		showGameEnd(true, data.wave)
+		if waveLabel then waveLabel.Text = ("Wave %d"):format(data.wave) end
+		startCountdown(data.countdown or 5)
 
 	elseif data.type == "gameover" then
-		waveLabel.Text       = ("Wave %d / %d"):format(data.wave, data.total)
-		waveStatusLabel.Text = "GAME OVER"
-		showGameEnd(false, data.wave)
+		if waveLabel      then waveLabel.Text       = ("Wave %d"):format(data.wave) end
+		if waveStatusLabel then waveStatusLabel.Text = "GAME OVER" end
+		showGameEnd(data.wave)
 
 	elseif data.type == "waveend" then
 		stopCountdown()
-		waveLabel.Text       = ("Wave %d / %d"):format(data.wave, data.total)
-		waveStatusLabel.Text = "Encerrando..."
+		if waveLabel      then waveLabel.Text       = ("Wave %d"):format(data.wave) end
+		if waveStatusLabel then waveStatusLabel.Text = "Encerrando..." end
 	end
 end
 
@@ -106,15 +87,36 @@ local function onPhaseChanged(data)
 
 	elseif data.phase == "BuildPhase" then
 		if endWaveButton then endWaveButton.Visible = false end
-		-- immediate=true (desistência): volta imediatamente sem mostrar GameEndFrame
-		-- immediate=false (derrota/vitória): aguarda 3s enquanto GameEndFrame fica visível
 		local delay = data.immediate and 0 or 3
 		task.delay(delay, function()
-			if gameEndFrame then gameEndFrame.Visible = false end
-			if startWaveButton then startWaveButton.Visible = true end
-			if waveStatusLabel then waveStatusLabel.Text = "Fase de Construção" end
+			if gameEndFrame    then gameEndFrame.Visible    = false end
+			if startWaveButton then startWaveButton.Visible = true  end
+			if waveStatusLabel then waveStatusLabel.Text    = "Fase de Construção" end
 		end)
 	end
+end
+
+-- ── HP da base do próprio plot ─────────────────────────────────────────────
+
+-- Aguarda o servidor atribuir o plot e então encontra a Base dentro dele.
+local function watchPlotBase()
+	local assignedPlot = nil
+
+	Remotes.PlotAssigned.OnClientEvent:Connect(function(plot)
+		assignedPlot = plot
+		local base = plot:FindFirstChild("Base")
+		local hp   = base and base:FindFirstChild("HP")
+
+		if hp then
+			if baseHPLabel then baseHPLabel.Text = ("Base: %d"):format(hp.Value) end
+			hp:GetPropertyChangedSignal("Value"):Connect(function()
+				if baseHPLabel then baseHPLabel.Text = ("Base: %d"):format(hp.Value) end
+			end)
+		else
+			if baseHPLabel then baseHPLabel.Text = "Base: --" end
+			warn("[HUDController] Base ou Base.HP não encontrado no plot atribuído")
+		end
+	end)
 end
 
 -- ── Init ───────────────────────────────────────────────────────────────────
@@ -142,7 +144,6 @@ function HUDController:init()
 		return
 	end
 
-	-- GameEndFrame
 	gameEndFrame = hudUI:WaitForChild("GameEndFrame", 5)
 	if gameEndFrame then
 		titleLabel    = gameEndFrame:FindFirstChild("TitleLabel")
@@ -151,7 +152,6 @@ function HUDController:init()
 		gameEndFrame.Visible = false
 
 		if restartButton then
-			-- Dismiss manual: fecha o frame sem esperar os 3s automáticos
 			restartButton.MouseButton1Click:Connect(function()
 				gameEndFrame.Visible = false
 			end)
@@ -160,7 +160,6 @@ function HUDController:init()
 		warn("[HUDController] GameEndFrame não encontrado no HudUI")
 	end
 
-	-- StartWaveButton: visível na BuildPhase
 	startWaveButton = hudUI:FindFirstChild("StartWaveButton", true)
 	if startWaveButton then
 		startWaveButton.Visible = true
@@ -169,10 +168,9 @@ function HUDController:init()
 			startWaveButton.Visible = false
 		end)
 	else
-		warn("[HUDController] StartWaveButton não encontrado no HudUI — crie-o no Studio")
+		warn("[HUDController] StartWaveButton não encontrado no HudUI")
 	end
 
-	-- EndWaveButton: visível só na CombatPhase (desistência manual)
 	endWaveButton = hudUI:FindFirstChild("EndWaveButton", true)
 	if endWaveButton then
 		endWaveButton.Visible = false
@@ -181,30 +179,16 @@ function HUDController:init()
 			endWaveButton.Visible = false
 		end)
 	else
-		warn("[HUDController] EndWaveButton não encontrado no HudUI — crie-o no Studio")
+		warn("[HUDController] EndWaveButton não encontrado no HudUI")
 	end
 
-	-- Textos iniciais
-	waveLabel.Text       = ("Wave - / %d"):format(TOTAL_WAVES)
+	waveLabel.Text       = "Wave —"
 	waveStatusLabel.Text = "Fase de Construção"
 	baseHPLabel.Text     = "Base: --"
 	moneyLabel.Text      = "$--"
 
-	-- Base HP via IntValue replicada
-	task.spawn(function()
-		local map  = Workspace:WaitForChild("Map",  15)
-		local base = map  and map:WaitForChild("Base", 10)
-		local hp   = base and base:FindFirstChild("HP")
-
-		if hp then
-			baseHPLabel.Text = ("Base: %d"):format(hp.Value)
-			hp:GetPropertyChangedSignal("Value"):Connect(function()
-				baseHPLabel.Text = ("Base: %d"):format(hp.Value)
-			end)
-		else
-			warn("[HUDController] Base ou Base.HP não encontrado em Workspace")
-		end
-	end)
+	-- HP da base: aguarda o plot ser atribuído pelo servidor
+	watchPlotBase()
 
 	-- Dinheiro via leaderstats
 	task.spawn(function()

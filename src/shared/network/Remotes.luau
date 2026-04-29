@@ -32,4 +32,5 @@ return {
 	PhaseChanged       = getRemote("PhaseChanged",       "RemoteEvent"),
 	RequestTowerAction = getRemote("RequestTowerAction", "RemoteFunction"),
 	PlotAssigned       = getRemote("PlotAssigned",       "RemoteEvent"),
+	WeaponFire         = getRemote("WeaponFire",         "RemoteEvent"),
 }
