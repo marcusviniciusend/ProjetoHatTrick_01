@@ -4,16 +4,15 @@ local CollectionService = game:GetService("CollectionService")
 local EnemyStats = require(ReplicatedStorage.Shared.configs.EnemyStats)
 
 local ENEMY_TAG          = "Enemy"
-local BLOCK_DETECT_RANGE = 12  -- studs: cone de detecção de torres bloqueando
-local ATTACK_RANGE       = 5   -- studs: distância para atacar a torre
-local BLOCK_DOT          = 0.6 -- cos(~53°): cone frontal de detecção
+local BLOCK_DETECT_RANGE = 12
+local ATTACK_RANGE       = 5
+local BLOCK_DOT          = 0.6
 
 local EnemyClass = {}
 EnemyClass.__index = EnemyClass
 
 export type StatsOverride = { hp: number?, speed: number? }?
 
--- Retorna o TowerClass mais próximo que está bloqueando o caminho ao próximo waypoint
 local function findBlockingTower(myPos: Vector3, waypointPos: Vector3, activeTowers)
 	local toWP     = waypointPos - myPos
 	local horizFwd = Vector3.new(toWP.X, 0, toWP.Z)
@@ -21,21 +20,36 @@ local function findBlockingTower(myPos: Vector3, waypointPos: Vector3, activeTow
 	horizFwd = horizFwd.Unit
 
 	local closest, closestDist = nil, math.huge
-	for _, towerObj in pairs(activeTowers) do
-		if towerObj._dead then continue end
-		local tp = towerObj.model and towerObj.model.PrimaryPart
-		if not tp then continue end
-		local toTower      = tp.Position - myPos
-		local horizToTower = Vector3.new(toTower.X, 0, toTower.Z)
-		local dist         = horizToTower.Magnitude
+	for _, tower in pairs(activeTowers) do
+		if tower._dead then continue end
+		local pp = tower.model and tower.model.PrimaryPart
+		if not pp then continue end
+
+		local delta = Vector3.new(pp.Position.X - myPos.X, 0, pp.Position.Z - myPos.Z)
+		local dist  = delta.Magnitude
 		if dist < 0.1 or dist > BLOCK_DETECT_RANGE then continue end
-		local dot = horizToTower.Unit:Dot(horizFwd)
-		if dot > BLOCK_DOT and dist < closestDist then
-			closest     = towerObj
-			closestDist = dist
+		if delta.Unit:Dot(horizFwd) > BLOCK_DOT and dist < closestDist then
+			closest, closestDist = tower, dist
 		end
 	end
 	return closest
+end
+
+local function moveToward(model: Model, primary: BasePart, targetPos: Vector3, speed: number, dt: number)
+	local dir    = targetPos - primary.Position
+	local newPos = primary.Position + dir.Unit * math.min(speed * dt, dir.Magnitude)
+	local flat   = Vector3.new(dir.X, 0, dir.Z)
+	model:PivotTo(
+		flat.Magnitude > 0.01
+			and CFrame.new(newPos, newPos + flat)
+			or  CFrame.new(newPos)
+	)
+end
+
+local function resolveBasePart(baseRef: Instance): BasePart?
+	if baseRef:IsA("BasePart") then return baseRef :: BasePart end
+	local m = baseRef :: Model
+	return m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart")
 end
 
 function EnemyClass.new(model: Model, enemyName: string, pivotAboveFloor: number, targetPlot: Model, statsOverride: StatsOverride)
@@ -45,7 +59,19 @@ function EnemyClass.new(model: Model, enemyName: string, pivotAboveFloor: number
 	local hp    = (statsOverride and statsOverride.hp)    or data.BaseHP
 	local speed = (statsOverride and statsOverride.speed) or data.Speed
 
-	local self = setmetatable({
+	local curVal  = Instance.new("IntValue")
+	curVal.Name   = "CurrentHP"
+	curVal.Value  = hp
+	curVal.Parent = model
+
+	local maxVal  = Instance.new("IntValue")
+	maxVal.Name   = "MaxHP"
+	maxVal.Value  = hp
+	maxVal.Parent = model
+
+	CollectionService:AddTag(model, ENEMY_TAG)
+
+	return setmetatable({
 		model            = model,
 		name             = enemyName,
 		hp               = hp,
@@ -58,34 +84,18 @@ function EnemyClass.new(model: Model, enemyName: string, pivotAboveFloor: number
 		_attackTimer     = 0,
 		_dead            = false,
 		_pivotAboveFloor = pivotAboveFloor,
-		targetPlot       = targetPlot,  -- plot que este inimigo está atacando
-		onDied           = nil,         -- (reward: number, targetPlot: Model) → void; setado pelo EnemyService
+		_hpValue         = curVal,   -- cached: evita FindFirstChild a cada takeDamage
+		targetPlot       = targetPlot,
+		onDied           = nil,      -- (reward, targetPlot) → void; setado pelo EnemyService
 	}, EnemyClass)
-
-	local curVal       = Instance.new("IntValue")
-	curVal.Name        = "CurrentHP"
-	curVal.Value       = hp
-	curVal.Parent      = model
-
-	local maxVal       = Instance.new("IntValue")
-	maxVal.Name        = "MaxHP"
-	maxVal.Value       = hp
-	maxVal.Parent      = model
-
-	CollectionService:AddTag(model, ENEMY_TAG)
-
-	return self
 end
 
--- Aplica dano. Quando HP chega a 0 emite onDied(reward, targetPlot) e marca _dead.
--- Quem deu o golpe final é irrelevante — a recompensa sempre vai para o dono do plot.
+-- Retorna true quando HP chega a 0; recompensa sempre vai para o dono do plot.
 function EnemyClass:takeDamage(amount: number): boolean
 	if self._dead then return true end
 
-	self.hp = math.max(0, self.hp - amount)
-
-	local val = self.model:FindFirstChild("CurrentHP")
-	if val then (val :: IntValue).Value = self.hp end
+	self.hp               = math.max(0, self.hp - amount)
+	self._hpValue.Value   = self.hp
 
 	if self.hp <= 0 then
 		self._dead = true
@@ -97,43 +107,28 @@ function EnemyClass:takeDamage(amount: number): boolean
 	return self._dead
 end
 
-local function moveToward(model: Model, primary: BasePart, targetPos: Vector3, speed: number, dt: number)
-	local dir     = targetPos - primary.Position
-	local step    = math.min(speed * dt, dir.Magnitude)
-	local newPos  = primary.Position + dir.Unit * step
-	local lookDir = Vector3.new(dir.X, 0, dir.Z)
-	local newCF   = lookDir.Magnitude > 0.01
-		and CFrame.new(newPos, newPos + lookDir)
-		or  CFrame.new(newPos)
-	model:PivotTo(newCF)
-end
-
--- Returns true when base HP reaches 0 (game over)
-local function attackBase(self, dt: number, baseRef: Instance): boolean
+function EnemyClass:_attackBase(dt: number, baseRef: Instance): boolean
 	local primary = self.model.PrimaryPart
 	if not primary then return false end
 
-	local basePart = (baseRef:IsA("BasePart") and baseRef)
-		or (baseRef :: Model).PrimaryPart
-		or baseRef:FindFirstChildWhichIsA("BasePart")
-	local baseHP = baseRef:FindFirstChild("HP")
+	local basePart = resolveBasePart(baseRef)
+	local baseHP   = baseRef:FindFirstChild("HP") :: IntValue?
 	if not (basePart and baseHP) then return true end
 
-	local dist = (basePart.Position - primary.Position).Magnitude
-	if dist > ATTACK_RANGE then
+	if (basePart.Position - primary.Position).Magnitude > ATTACK_RANGE then
 		moveToward(self.model, primary, basePart.Position, self.speed, dt)
 		return false
 	end
 
 	if self._attackTimer <= 0 then
-		self._attackTimer = self.attackCooldown;
-		(baseHP :: IntValue).Value = math.max(0, (baseHP :: IntValue).Value - self.damage)
+		self._attackTimer = self.attackCooldown
+		baseHP.Value      = math.max(0, baseHP.Value - self.damage)
 	end
 
-	return (baseHP :: IntValue).Value <= 0
+	return baseHP.Value <= 0
 end
 
--- Returns true when base HP reaches 0 (triggers game over in EnemyService)
+-- Retorna true quando HP da base chega a 0 (game over).
 function EnemyClass:update(dt: number, waypoints: { BasePart }, activeTowers, baseRef: Instance?): boolean
 	if self._dead or not self.model.Parent then return false end
 
@@ -144,42 +139,28 @@ function EnemyClass:update(dt: number, waypoints: { BasePart }, activeTowers, ba
 
 	local wp = waypoints[self.waypointIndex]
 	if not wp then
-		-- Chegou ao fim do path: ataca a base até ela morrer
-		if baseRef then
-			return attackBase(self, dt, baseRef)
-		end
-		return true
+		return baseRef and self:_attackBase(dt, baseRef) or true
 	end
 
-	-- Detecta torre bloqueando o caminho ao próximo waypoint
-	if activeTowers then
-		local blocker = findBlockingTower(primary.Position, wp.Position, activeTowers)
-		if blocker then
-			local tp = blocker.model and blocker.model.PrimaryPart
-			if tp then
-				local dist = (tp.Position - primary.Position).Magnitude
-				if dist <= ATTACK_RANGE then
-					-- Dentro do alcance: para e ataca
-					if self._attackTimer <= 0 then
-						self._attackTimer = self.attackCooldown
-						blocker:takeDamage(self.damage)
-					end
-				else
-					-- Fora do alcance: caminha até a torre
-					moveToward(self.model, primary, tp.Position, self.speed, dt)
+	local blocker = activeTowers and findBlockingTower(primary.Position, wp.Position, activeTowers)
+	if blocker then
+		local pp = blocker.model and blocker.model.PrimaryPart
+		if pp then
+			if (pp.Position - primary.Position).Magnitude <= ATTACK_RANGE then
+				if self._attackTimer <= 0 then
+					self._attackTimer = self.attackCooldown
+					blocker:takeDamage(self.damage)
 				end
+			else
+				moveToward(self.model, primary, pp.Position, self.speed, dt)
 			end
-			return false
 		end
+		return false
 	end
 
-	-- Movimento normal em direção ao waypoint
-	local target  = wp.Position + Vector3.new(0, self._pivotAboveFloor, 0)
-	local current = primary.Position
-	local dir     = target - current
-	local dist2D  = Vector2.new(dir.X, dir.Z).Magnitude
-
-	if dist2D < 2 then
+	local target = wp.Position + Vector3.new(0, self._pivotAboveFloor, 0)
+	local dir    = target - primary.Position
+	if Vector2.new(dir.X, dir.Z).Magnitude < 2 then
 		self.waypointIndex += 1
 	else
 		moveToward(self.model, primary, target, self.speed, dt)

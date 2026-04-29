@@ -8,6 +8,7 @@ local TowerService     = require(services.TowerService)    -- depende de EnemySe
 local PlacementService = require(services.PlacementService) -- depende de Currency, Plot, Tower
 local WaveService      = require(services.WaveService)     -- inicia EnemyService internamente
 local WeaponService    = require(services.WeaponService)
+local StoreService     = require(services.StoreService)
 
 PhysicsService:init()    -- ← primeiro: grupos precisam existir antes de qualquer spawn
 CurrencyService:init()
@@ -16,3 +17,4 @@ TowerService:init()
 PlacementService:init()
 WaveService:init()       -- ← inicia EnemyService + agenda Wave 1
 WeaponService:init()
+StoreService:init()

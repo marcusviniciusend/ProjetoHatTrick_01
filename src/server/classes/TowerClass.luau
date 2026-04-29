@@ -3,29 +3,46 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local TowerStats = require(ReplicatedStorage.Shared.configs.TowerStats)
 
-local TOWER_TAG  = "Tower"
-local MELEE_RANGE = 5
-local MELEE_DMG   = 10
-local MELEE_TICK  = 1.0
+local TOWER_TAG    = "Tower"
+local MELEE_RANGE  = 5
+local MELEE_DMG    = 10
+local MELEE_TICK   = 1.0
 
 local TowerClass = {}
 TowerClass.__index = TowerClass
 
 type ActiveEnemies = { [Model]: any }
 
-local function findNearest(towerPos: Vector3, range: number, activeEnemies: ActiveEnemies)
-	local nearest, nearestDist = nil, math.huge
+-- "First"   → inimigo mais avançado no percurso (maior waypointIndex, desempate por distância)
+-- "Nearest" → inimigo mais próximo da torre
+local function findTarget(towerPos: Vector3, range: number, activeEnemies: ActiveEnemies, mode: string)
+	local best, bestScore = nil, nil
+
 	for _, enemyObj in pairs(activeEnemies) do
 		if enemyObj._dead then continue end
 		local primary = enemyObj.model and enemyObj.model.PrimaryPart
 		if not primary then continue end
+
 		local dist = (primary.Position - towerPos).Magnitude
-		if dist <= range and dist < nearestDist then
-			nearest     = enemyObj
-			nearestDist = dist
+		if dist > range then continue end
+
+		-- score maior = prioridade maior
+		local score: number
+		if mode == "Nearest" then
+			score = -dist
+		else  -- "First"
+			-- waypointIndex * 10000 garante que qualquer índice maior sempre vence,
+			-- com distância como desempate (mais próximo ganha entre mesmos índices)
+			score = enemyObj.waypointIndex * 10000 - dist
+		end
+
+		if bestScore == nil or score > bestScore then
+			best      = enemyObj
+			bestScore = score
 		end
 	end
-	return nearest
+
+	return best
 end
 
 local function applyColor(model: Model, color: Color3)
@@ -47,21 +64,7 @@ function TowerClass.new(model: Model, towerName: string, level: number?)
 	local stats = towerData.Levels[lvl]
 	assert(stats, ("[TowerClass] Level %d não definido para '%s'"):format(lvl, towerName))
 
-	local self = setmetatable({
-		model          = model,
-		name           = towerName,
-		level          = lvl,
-		basePrice      = towerData.BasePrice,
-		hp             = towerData.MaxHP,
-		maxHp          = towerData.MaxHP,
-		_stats         = stats,
-		_towerData     = towerData,
-		_cooldownTimer = 0,
-		_meleeCooldown = 0,
-		_dead          = false,
-	}, TowerClass)
-
-	-- IntValues replicadas para o cliente (HP bars, nível)
+	-- Cria IntValues antes do setmetatable para poder cachear as referências
 	local curVal   = Instance.new("IntValue")
 	curVal.Name    = "CurrentHP"
 	curVal.Value   = towerData.MaxHP
@@ -84,21 +87,32 @@ function TowerClass.new(model: Model, towerName: string, level: number?)
 
 	CollectionService:AddTag(model, TOWER_TAG)
 
-	-- Aplica tint do nível se definido (snapshot restore com level > 1)
 	if stats.Color then
 		applyColor(model, stats.Color)
 	end
 
-	return self
+	return setmetatable({
+		model          = model,
+		name           = towerName,
+		level          = lvl,
+		basePrice      = towerData.BasePrice,
+		hp             = towerData.MaxHP,
+		maxHp          = towerData.MaxHP,
+		_stats         = stats,
+		_towerData     = towerData,
+		_targetMode    = towerData.TargetMode or "First",
+		_cooldownTimer = 0,
+		_meleeCooldown = 0,
+		_dead          = false,
+		_hpValue       = curVal,   -- cached: evita FindFirstChild a cada takeDamage
+	}, TowerClass)
 end
 
 function TowerClass:takeDamage(amount: number): boolean
 	if self._dead then return true end
 
-	self.hp = math.max(0, self.hp - amount)
-
-	local val = self.model:FindFirstChild("CurrentHP")
-	if val then (val :: IntValue).Value = self.hp end
+	self.hp             = math.max(0, self.hp - amount)
+	self._hpValue.Value = self.hp
 
 	if self.hp <= 0 then
 		self._dead = true
@@ -114,11 +128,9 @@ function TowerClass:upgrade(): boolean
 	self.level  = self.level + 1
 	self._stats = nextStats
 
-	-- Atualiza IntValue de nível (replicado ao cliente)
 	local lvlVal = self.model:FindFirstChild("Level")
 	if lvlVal then (lvlVal :: IntValue).Value = self.level end
 
-	-- Aplica tint visual se definido para este nível
 	if nextStats.Color then
 		applyColor(self.model, nextStats.Color)
 	end
@@ -169,7 +181,7 @@ function TowerClass:update(dt: number, activeEnemies: ActiveEnemies)
 	self._cooldownTimer -= dt
 	if self._cooldownTimer > 0 then return end
 
-	local target = findNearest(primary.Position, self._stats.Range, activeEnemies)
+	local target = findTarget(primary.Position, self._stats.Range, activeEnemies, self._targetMode)
 	if target then
 		self._cooldownTimer = self._stats.Cooldown
 		target:takeDamage(self._stats.Damage)

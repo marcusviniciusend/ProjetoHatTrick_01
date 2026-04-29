@@ -33,4 +33,6 @@ return {
 	RequestTowerAction = getRemote("RequestTowerAction", "RemoteFunction"),
 	PlotAssigned       = getRemote("PlotAssigned",       "RemoteEvent"),
 	WeaponFire         = getRemote("WeaponFire",         "RemoteEvent"),
+	ShopUpdated        = getRemote("ShopUpdated",        "RemoteEvent"),
+	BuyShopItem        = getRemote("BuyShopItem",        "RemoteFunction"),
 }
