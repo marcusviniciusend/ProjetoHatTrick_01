@@ -14,8 +14,8 @@ local PlacementService = {}
 
 -- Torres em ReplicatedStorage para que o cliente possa clonar o preview 3D
 local towersFolder   = nil
-local placedTowers   = {}  -- { [model] = { owner = userId, towerName = string, level = number } }
-local savedSnapshot  = {}  -- { { towerName, level, cframe, ownerUserId } }
+local placedTowers   = {}  -- { [model] = { owner = userId, towerName = string, level = number, quad = BasePart } }
+local savedSnapshot  = {}  -- { { towerName, level, cframe, ownerUserId, quad } }
 local _phaseProvider = nil
 
 -- ── Helpers ────────────────────────────────────────────────────────────────
@@ -36,7 +36,7 @@ local function anchorClone(clone)
 	end
 end
 
-local function spawnTower(clone, towerName, cframe, ownerUserId, level)
+local function spawnTower(clone, towerName, cframe, ownerUserId, level, quad)
 	anchorClone(clone)
 
 	if clone:IsA("Model") and clone.PrimaryPart then
@@ -47,17 +47,28 @@ local function spawnTower(clone, towerName, cframe, ownerUserId, level)
 
 	clone.Parent = Workspace
 
-	placedTowers[clone] = { owner = ownerUserId, towerName = towerName, level = level }
+	placedTowers[clone] = { owner = ownerUserId, towerName = towerName, level = level, quad = quad }
 	clone.Destroying:Connect(function() placedTowers[clone] = nil end)
 
+	if quad then quad:SetAttribute("Ocupado", true) end
 	TowerService:registerTower(clone, towerName, level)
 end
 
 -- ── Placement ──────────────────────────────────────────────────────────────
 
-local function tryPlace(player, towerName, position)
+local function tryPlace(player, towerName, quad)
 	if _phaseProvider and _phaseProvider() ~= "BuildPhase" then
 		warn_("'%s' tentou construir durante CombatPhase", player.Name)
+		return
+	end
+
+	-- Anti-hack: quad deve ser um BasePart "plotQuad" válido e desocupado
+	if not (typeof(quad) == "Instance" and quad:IsA("BasePart") and quad.Name == "plotQuad") then
+		warn_("'%s' enviou quad inválido", player.Name)
+		return
+	end
+	if quad:GetAttribute("Ocupado") == true then
+		warn_("'%s' tentou colocar em quad já ocupado", player.Name)
 		return
 	end
 
@@ -67,36 +78,34 @@ local function tryPlace(player, towerName, position)
 		return
 	end
 
-	if not PlotService:isInsidePlot(player, position) then
-		warn_("'%s' tentou colocar fora do plot", player.Name)
+	if not PlotService:isInsidePlot(player, quad.Position) then
+		warn_("'%s' tentou colocar fora do seu plot", player.Name)
 		return
 	end
 
-	-- Verifica inventário primeiro; só cobra se não tiver unidade comprada na loja
-	local fromInventory = InventoryService:consume(player, towerName)
-	if not fromInventory then
-		if not CurrencyService:spendMoney(player, stats.BasePrice) then
-			warn_("'%s' sem saldo para '%s' ($%d)", player.Name, towerName, stats.BasePrice)
-			return
-		end
+	-- Somente torres do inventário podem ser construídas
+	if not InventoryService:consume(player, towerName) then
+		warn_("'%s' não tem '%s' no inventário", player.Name, towerName)
+		return
 	end
 
 	if not towersFolder then
-		warn_("Pasta de torres não encontrada — devolvendo saldo")
-		if not fromInventory then CurrencyService:addMoney(player, stats.BasePrice) end
+		warn_("Pasta de torres não encontrada — devolvendo item")
+		InventoryService:add(player, towerName)
 		return
 	end
 
 	local template = towersFolder:FindFirstChild(towerName)
 	if not template then
-		warn_("Modelo '%s' não encontrado — devolvendo saldo", towerName)
-		if not fromInventory then CurrencyService:addMoney(player, stats.BasePrice) end
+		warn_("Modelo '%s' não encontrado — devolvendo item", towerName)
+		InventoryService:add(player, towerName)
 		return
 	end
 
-	local clone = template:Clone()
-	spawnTower(clone, towerName, CFrame.new(position), player.UserId, 1)
-	log("'%s' colocou '%s' em %s", player.Name, towerName, tostring(position))
+	local position = Vector3.new(quad.Position.X, quad.Position.Y + (quad.Size.Y / 2), quad.Position.Z)
+	local clone    = template:Clone()
+	spawnTower(clone, towerName, CFrame.new(position), player.UserId, 1, quad)
+	log("'%s' colocou '%s' em %s", player.Name, towerName, tostring(quad.Name))
 end
 
 -- ── Ação na torre (Upgrade / Sell) ─────────────────────────────────────────
@@ -149,6 +158,7 @@ local function handleTowerAction(player: Player, tower: Model, action: string): 
 		local refund = stats and math.floor(stats.BasePrice * 0.5) or 0
 
 		TowerService:unregisterTower(tower)
+		if info.quad then info.quad:SetAttribute("Ocupado", false) end
 		placedTowers[tower] = nil
 		tower:Destroy()
 
@@ -172,6 +182,7 @@ function PlacementService:saveSnapshot()
 				level       = info.level or 1,
 				cframe      = model:GetPivot(),
 				ownerUserId = info.owner,
+				quad        = info.quad,
 			})
 		end
 	end
@@ -179,6 +190,11 @@ function PlacementService:saveSnapshot()
 end
 
 function PlacementService:restoreSnapshot()
+	-- Libera os quads das torres atuais antes de destruí-las
+	for _, info in pairs(placedTowers) do
+		if info.quad then info.quad:SetAttribute("Ocupado", false) end
+	end
+
 	local toDestroy = {}
 	for model in pairs(placedTowers) do
 		table.insert(toDestroy, model)
@@ -196,7 +212,7 @@ function PlacementService:restoreSnapshot()
 		local template = towersFolder:FindFirstChild(data.towerName)
 		if not template then continue end
 		local clone = template:Clone()
-		spawnTower(clone, data.towerName, data.cframe, data.ownerUserId, data.level)
+		spawnTower(clone, data.towerName, data.cframe, data.ownerUserId, data.level, data.quad)
 	end
 
 	log("Snapshot restaurado: %d torre(s)", #savedSnapshot)
@@ -212,7 +228,9 @@ function PlacementService:destroyTowersForPlayer(ownerUserId: number)
 		end
 	end
 	for _, model in ipairs(toDestroy) do
+		local info = placedTowers[model]
 		TowerService:unregisterTower(model)
+		if info and info.quad then info.quad:SetAttribute("Ocupado", false) end
 		placedTowers[model] = nil
 		if model.Parent then model:Destroy() end
 	end

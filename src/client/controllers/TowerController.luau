@@ -1,95 +1,64 @@
 local CollectionService = game:GetService("CollectionService")
 local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService  = game:GetService("UserInputService")
+local Workspace         = game:GetService("Workspace")
 
 local UIController        = require(script.Parent.UIController)
 local PlacementController = require(script.Parent.PlacementController)
+local TowerStats          = require(ReplicatedStorage.Shared.configs.TowerStats)
+local HealthBarUtil       = require(ReplicatedStorage.Shared.utils.HealthBarUtil)
 
 local TOWER_TAG = "Tower"
 
 local TowerController = {}
 
-local player      = Players.LocalPlayer
-local mouse       = player:GetMouse()
-local selectedBox = nil  -- SelectionBox atual
-local selectedTower = nil
+local player         = Players.LocalPlayer
+local mouse          = player:GetMouse()
+local selectedBox    = nil
+local selectedTower  = nil
+local rangeIndicator = nil
 
--- ── Cores da barra de HP ───────────────────────────────────────────────────
+local TOWER_BAR_CONFIG = {
+	studsOffset = Vector3.new(0, 4, 0),
+	maxDistance = 60,
+	showLevel   = true,
+}
 
-local function getBarColor(pct)
-	if pct > 0.6 then
-		return Color3.fromRGB(0, 200, 60)
-	elseif pct > 0.3 then
-		return Color3.fromRGB(255, 165, 0)
-	else
-		return Color3.fromRGB(220, 40, 40)
+-- ── Range indicator ────────────────────────────────────────────────────────
+
+function TowerController:hideRange()
+	if rangeIndicator then
+		rangeIndicator:Destroy()
+		rangeIndicator = nil
 	end
 end
 
--- ── HP Bar + Level label ───────────────────────────────────────────────────
+local function showRange(model: Model)
+	TowerController:hideRange()
 
-local function attachHealthBar(tower)
-	local primary   = tower.PrimaryPart
-	local currentHP = tower:WaitForChild("CurrentHP", 5)
-	local maxHP     = tower:WaitForChild("MaxHP",     5)
-	local levelVal  = tower:WaitForChild("Level",     5)
+	local template = ReplicatedStorage:FindFirstChild("RangeIndicator")
+	if not template then return end
 
-	if not (primary and currentHP and maxHP) then return end
-	if maxHP.Value <= 0 then return end
+	local nameVal   = model:FindFirstChild("TowerName")
+	local lvlVal    = model:FindFirstChild("Level")
+	local towerName = nameVal and nameVal.Value or model.Name
+	local level     = lvlVal  and lvlVal.Value  or 1
 
-	local billboard          = Instance.new("BillboardGui")
-	billboard.Name           = "HealthBar"
-	billboard.Size           = UDim2.new(0, 80, 0, 14)
-	billboard.StudsOffset    = Vector3.new(0, 4, 0)
-	billboard.AlwaysOnTop    = false
-	billboard.MaxDistance    = 60
-	billboard.ResetOnSpawn   = false
-	billboard.Parent         = primary
+	local data  = TowerStats[towerName]
+	local stats = data and data.Levels and data.Levels[level]
+	local range = stats and stats.Range or 0
+	if range <= 0 then return end
 
-	-- Fundo escuro
-	local bg              = Instance.new("Frame")
-	bg.Size               = UDim2.new(1, 0, 0, 8)
-	bg.BackgroundColor3   = Color3.fromRGB(25, 25, 25)
-	bg.BorderSizePixel    = 0
-	bg.Parent             = billboard
+	rangeIndicator          = template:Clone()
+	rangeIndicator.Size     = Vector3.new(0.5, range * 2, range * 2)
+	rangeIndicator.Anchored    = true
+	rangeIndicator.CanCollide  = false
+	rangeIndicator.CanQuery    = false
 
-	-- Barra de HP
-	local bar             = Instance.new("Frame")
-	bar.Name              = "Bar"
-	bar.AnchorPoint       = Vector2.new(0, 0)
-	bar.Size              = UDim2.fromScale(1, 1)
-	bar.BorderSizePixel   = 0
-	bar.Parent            = bg
-
-	-- Label de nível (acima da barra)
-	local lvlLabel           = Instance.new("TextLabel")
-	lvlLabel.Name            = "LevelLabel"
-	lvlLabel.Size            = UDim2.new(1, 0, 0, 6)
-	lvlLabel.Position        = UDim2.new(0, 0, -1, 0)
-	lvlLabel.BackgroundTransparency = 1
-	lvlLabel.TextColor3      = Color3.fromRGB(255, 220, 50)
-	lvlLabel.TextScaled      = true
-	lvlLabel.Font            = Enum.Font.GothamBold
-	lvlLabel.Parent          = billboard
-
-	local function updateHP()
-		local pct            = math.clamp(currentHP.Value / maxHP.Value, 0, 1)
-		bar.Size             = UDim2.fromScale(pct, 1)
-		bar.BackgroundColor3 = getBarColor(pct)
-		billboard.Enabled    = pct < 1
-	end
-
-	local function updateLevel()
-		lvlLabel.Text = ("Lv.%d"):format(levelVal and levelVal.Value or 1)
-	end
-
-	currentHP:GetPropertyChangedSignal("Value"):Connect(updateHP)
-	if levelVal then
-		levelVal:GetPropertyChangedSignal("Value"):Connect(updateLevel)
-	end
-
-	updateHP()
-	updateLevel()
+	local pivot = model:GetPivot()
+	rangeIndicator.CFrame = CFrame.new(pivot.Position.X, pivot.Position.Y + 0.25, pivot.Position.Z)
+	rangeIndicator.Parent = Workspace
 end
 
 -- ── Seleção de torre ───────────────────────────────────────────────────────
@@ -100,6 +69,7 @@ local function deselect()
 		selectedBox  = nil
 	end
 	selectedTower = nil
+	TowerController:hideRange()
 	UIController:hideTowerInfo()
 end
 
@@ -112,34 +82,32 @@ local function selectTower(tower)
 	deselect()
 	selectedTower = tower
 
-	selectedBox            = Instance.new("SelectionBox")
-	selectedBox.Color3     = Color3.fromRGB(255, 220, 0)
-	selectedBox.LineThickness = 0.06
+	selectedBox                     = Instance.new("SelectionBox")
+	selectedBox.Color3              = Color3.fromRGB(255, 220, 0)
+	selectedBox.LineThickness       = 0.06
 	selectedBox.SurfaceTransparency = 0.8
-	selectedBox.SurfaceColor3 = Color3.fromRGB(255, 220, 0)
-	selectedBox.Adornee    = tower
-	selectedBox.Parent     = workspace
+	selectedBox.SurfaceColor3       = Color3.fromRGB(255, 220, 0)
+	selectedBox.Adornee             = tower
+	selectedBox.Parent              = Workspace
 
+	showRange(tower)
 	UIController:showTowerInfo(tower)
 end
 
 -- ── Init ───────────────────────────────────────────────────────────────────
 
 function TowerController:init()
-	-- HP bars em torres já existentes
 	for _, tower in ipairs(CollectionService:GetTagged(TOWER_TAG)) do
-		task.spawn(attachHealthBar, tower)
+		task.spawn(HealthBarUtil.attach, tower, TOWER_BAR_CONFIG)
 	end
 	CollectionService:GetInstanceAddedSignal(TOWER_TAG):Connect(function(tower)
-		task.spawn(attachHealthBar, tower)
+		task.spawn(HealthBarUtil.attach, tower, TOWER_BAR_CONFIG)
 	end)
 
-	-- Deseleciona quando a torre é removida
 	CollectionService:GetInstanceRemovedSignal(TOWER_TAG):Connect(function(tower)
 		if selectedTower == tower then deselect() end
 	end)
 
-	-- Click para selecionar torre (só fora do modo construção/delete)
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
@@ -148,7 +116,6 @@ function TowerController:init()
 		local target = mouse.Target
 		if not target then deselect(); return end
 
-		-- Sobe na hierarquia para encontrar o Model com a tag Tower
 		local model = target
 		while model and not model:IsA("Model") do
 			model = model.Parent

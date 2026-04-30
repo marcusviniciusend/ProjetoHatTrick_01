@@ -143,12 +143,14 @@ local function makeGhostFor(towerName: string)
 end
 
 local function setGhostColor(valid: boolean)
-	if not ghostModel then return end
 	local color = valid and Color3.fromRGB(0, 255, 80) or Color3.fromRGB(220, 40, 40)
-	for _, part in ipairs(ghostModel:GetDescendants()) do
-		if part:IsA("BasePart") then part.Color = color end
+	if ghostModel then
+		for _, part in ipairs(ghostModel:GetDescendants()) do
+			if part:IsA("BasePart") then part.Color = color end
+		end
+		if ghostModel.PrimaryPart then ghostModel.PrimaryPart.Color = color end
 	end
-	if ghostModel.PrimaryPart then ghostModel.PrimaryPart.Color = color end
+	if blocoFantasma then blocoFantasma.Color = color end
 end
 
 local function hideAll()
@@ -194,13 +196,15 @@ function PlacementController:init()
 		if not mouse.Hit then return end
 
 		if modoConstrucaoAtivo then
+			local quad    = getHoveredQuad()
+			local valid   = quad ~= nil and quad:GetAttribute("Ocupado") ~= true
 			local snapped = getSnapPosition()
 			if ghostModel and ghostModel.PrimaryPart then
 				ghostModel:PivotTo(CFrame.new(snapped))
-				setGhostColor(isMouseOnPlot())
 			else
 				blocoFantasma.Position = snapped
 			end
+			setGhostColor(valid)
 
 		elseif modoDeletarAtivo then
 			-- Hover highlight: realça a torre do player sob o cursor
@@ -216,10 +220,10 @@ function PlacementController:init()
 
 	mouse.Button1Down:Connect(function()
 		if modoConstrucaoAtivo and torreSelecionada then
-			local pos = ghostModel and ghostModel.PrimaryPart
-				and ghostModel.PrimaryPart.Position
-				or blocoFantasma.Position
-			Remotes.PlaceTower:FireServer(torreSelecionada, pos)
+			local quad = getHoveredQuad()
+			if quad and quad:GetAttribute("Ocupado") ~= true then
+				Remotes.PlaceTower:FireServer(torreSelecionada, quad)
+			end
 
 		elseif modoDeletarAtivo then
 			local tower = getHoveredTowerOnMyPlot()

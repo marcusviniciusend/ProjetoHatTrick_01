@@ -68,6 +68,7 @@ function UIController:setState(newState: string)
 
 	elseif newState == STATE.InventoryOpen then
 		if inventarioUI then inventarioUI.Enabled = true end
+		task.spawn(updateInventoryUI)
 		-- Limpa seleção visual dos botões de torre
 		for btn in pairs(registeredButtons) do
 			local stroke = btn:FindFirstChildWhichIsA("UIStroke")
@@ -210,12 +211,25 @@ function UIController:refreshTowerInfo()
 	local curStats = data.Levels[level]
 	local nxtStats = data.Levels[level + 1]
 
-	if nameLabel     then nameLabel.Text     = ("%s  —  Lv.%d"):format(towerName, level) end
-	if statsLabel    then statsLabel.Text    = formatStats(curStats) end
+	if nameLabel then nameLabel.Text = ("%s  —  Lv.%d"):format(towerName, level) end
+
+	if statsLabel then
+		local danoAtual  = curStats and curStats.Damage   or 0
+		local rangeAtual = curStats and curStats.Range    or 0
+		local cdAtual    = curStats and curStats.Cooldown or 0
+		local danoProx   = nxtStats and nxtStats.Damage   or danoAtual
+		local rangeProx  = nxtStats and nxtStats.Range    or rangeAtual
+		local cdProx     = nxtStats and nxtStats.Cooldown or cdAtual
+
+		local lines = {}
+		if danoAtual  > 0 then table.insert(lines, ("Dano: %d > %d"):format(danoAtual, danoProx))       end
+		if rangeAtual > 0 then table.insert(lines, ("Alcance: %d > %d"):format(rangeAtual, rangeProx))  end
+		if cdAtual    > 0 then table.insert(lines, ("CD: %.2fs > %.2fs"):format(cdAtual, cdProx))       end
+		statsLabel.Text = #lines > 0 and table.concat(lines, "\n") or "Passiva"
+	end
+
 	if nextStatsLabel then
-		nextStatsLabel.Text = nxtStats
-			and ("Próx: " .. formatStats(nxtStats))
-			or  "Nível máximo"
+		nextStatsLabel.Text = nxtStats and "" or "Nível máximo"
 	end
 
 	if upgradeButton then
@@ -279,20 +293,17 @@ local function highlightButton(btn)
 	):Play()
 end
 
-local function updateButtonStates(money)
+local function updateInventoryUI()
+	local towers = Remotes.GetInventory:InvokeServer()
+	local counts = {}
+	for _, name in ipairs(towers) do
+		counts[name] = (counts[name] or 0) + 1
+	end
 	for btn, towerName in pairs(registeredButtons) do
-		local stats  = TowerStats[towerName]
-		local canBuy = stats and money >= stats.BasePrice
-
-		btn.AutoButtonColor        = canBuy
-		btn.BackgroundTransparency = canBuy and 0.1 or 0.55
-
-		local priceLabel = btn:FindFirstChild("Price")
-		if priceLabel then
-			priceLabel.TextColor3 = canBuy
-				and Color3.fromRGB(255, 255, 255)
-				or  Color3.fromRGB(180, 60, 60)
-		end
+		local count  = counts[towerName] or 0
+		btn.Visible  = count > 0
+		local lbl    = btn:FindFirstChild("labelQtd")
+		if lbl then lbl.Text = count .. "x" end
 	end
 end
 
@@ -337,13 +348,11 @@ function UIController:init()
 		end
 	end
 
-	-- Saldo do jogador
+	-- Atualiza custo de upgrade quando o saldo muda
 	local leaderstats = player:WaitForChild("leaderstats", 10)
 	if leaderstats then
 		local money = leaderstats:WaitForChild("Money")
-		updateButtonStates(money.Value)
 		money:GetPropertyChangedSignal("Value"):Connect(function()
-			updateButtonStates(money.Value)
 			if currentTower then self:refreshTowerInfo() end
 		end)
 	end
@@ -379,6 +388,7 @@ function UIController:init()
 		if closeButton then
 			closeButton.MouseButton1Click:Connect(function()
 				self:hideTowerInfo()
+				require(script.Parent.TowerController):hideRange()
 			end)
 		end
 	else

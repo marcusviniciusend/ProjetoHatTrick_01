@@ -1,45 +1,66 @@
 local Players = game:GetService("Players")
 
-local PlotService = require(script.Parent.PlotService)
+local PlotService   = require(script.Parent.PlotService)
+local DataService   = require(script.Parent.DataService)
 
 local CurrencyService = {}
 
-local STARTING_MONEY = 500
+local moneyValues = {}  -- { [player] = IntValue } — cache para evitar FindFirstChild por chamada
 
-local function setupLeaderstats(player)
+local function syncLeaderstats(player: Player, coins: number)
+	local mv = moneyValues[player]
+	if mv then mv.Value = coins end
+end
+
+local function setupLeaderstats(player: Player)
+	local profile = DataService:GetProfile(player)
+	if not profile then return end
+
 	local leaderstats  = Instance.new("Folder")
 	leaderstats.Name   = "leaderstats"
 	leaderstats.Parent = player
 
 	local money       = Instance.new("IntValue")
 	money.Name        = "Money"
-	money.Value       = STARTING_MONEY
+	money.Value       = profile.Currency.Coins
 	money.Parent      = leaderstats
+
+	moneyValues[player] = money
 end
 
 function CurrencyService:init()
-	Players.PlayerAdded:Connect(setupLeaderstats)
+	-- ProfileLoaded garante que o perfil já está em memória quando setupLeaderstats roda,
+	-- eliminando a necessidade de polling (waitForProfile).
+	DataService.ProfileLoaded.Event:Connect(setupLeaderstats)
 
-	-- Cobre players que entraram antes do init (edge case em Studio)
+	-- Limpa cache ao sair para não vazar memória
+	Players.PlayerRemoving:Connect(function(player)
+		moneyValues[player] = nil
+	end)
+
+	-- Edge case: Studio Play Solo — jogador pode já estar presente ao init rodar
 	for _, player in ipairs(Players:GetPlayers()) do
-		task.spawn(setupLeaderstats, player)
+		task.spawn(function()
+			if DataService:GetProfile(player) then
+				setupLeaderstats(player)
+			end
+		end)
 	end
 end
 
-function CurrencyService:getMoney(player)
-	local ls = player:FindFirstChild("leaderstats")
-	return ls and ls:FindFirstChild("Money") and ls.Money.Value or 0
+function CurrencyService:getMoney(player: Player): number
+	local profile = DataService:GetProfile(player)
+	return profile and profile.Currency.Coins or 0
 end
 
-function CurrencyService:addMoney(player, amount)
-	local ls = player:FindFirstChild("leaderstats")
-	if ls and ls:FindFirstChild("Money") then
-		ls.Money.Value += amount
-	end
+function CurrencyService:addMoney(player: Player, amount: number)
+	local profile = DataService:GetProfile(player)
+	if not profile then return end
+	profile.Currency.Coins += amount
+	syncLeaderstats(player, profile.Currency.Coins)
 end
 
 -- Credita `amount` exclusivamente para o dono do plot.
--- Ignoramos quem deu o golpe final — a recompensa pertence a quem defende aquela base.
 function CurrencyService:rewardForPlot(plot, amount: number)
 	local userId = PlotService:getOwnerUserId(plot)
 	if not userId then return end
@@ -50,12 +71,12 @@ function CurrencyService:rewardForPlot(plot, amount: number)
 end
 
 -- Retorna true e debita se tiver saldo. Retorna false sem alterar nada caso contrário.
-function CurrencyService:spendMoney(player, amount)
-	if self:getMoney(player) < amount then
-		return false
-	end
-	local ls = player:FindFirstChild("leaderstats")
-	ls.Money.Value -= amount
+function CurrencyService:spendMoney(player: Player, amount: number): boolean
+	local profile = DataService:GetProfile(player)
+	if not profile then return false end
+	if profile.Currency.Coins < amount then return false end
+	profile.Currency.Coins -= amount
+	syncLeaderstats(player, profile.Currency.Coins)
 	return true
 end
 

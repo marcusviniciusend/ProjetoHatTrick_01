@@ -18,7 +18,6 @@ local plotData       = {}
 local defeatedPlots  = {}
 
 local onRemovedCb       = nil
-local onGameOverCb      = nil
 local onPlotDefeatedCb  = nil
 local gameStopped       = false
 local _towerProvider    = nil
@@ -90,10 +89,9 @@ end
 
 -- ── Init ───────────────────────────────────────────────────────────────────
 
-function EnemyService:init(onRemovedCallback, onGameOverCallback)
-	onRemovedCb  = onRemovedCallback
-	onGameOverCb = onGameOverCallback
-	gameStopped  = false
+function EnemyService:init(onRemovedCallback)
+	onRemovedCb = onRemovedCallback
+	gameStopped = false
 	loadPlots()
 
 	RunService.Heartbeat:Connect(function(dt)

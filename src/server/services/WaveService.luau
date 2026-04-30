@@ -246,7 +246,7 @@ function WaveService:startWave(waveNumber: number)
 end
 
 function WaveService:init()
-	EnemyService:init(onEnemyRemoved, nil)  -- onGameOver é gerido por onPlotDefeated
+	EnemyService:init(onEnemyRemoved)
 	EnemyService:setPlotDefeatedCallback(onPlotDefeated)
 	PlacementService:setPhaseProvider(function() return currentPhase end)
 

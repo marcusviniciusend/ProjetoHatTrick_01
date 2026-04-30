@@ -25,7 +25,6 @@ end
 
 return {
 	PlaceTower         = getRemote("PlaceTower",         "RemoteEvent"),
-	SellTower          = getRemote("SellTower",          "RemoteEvent"),
 	WaveUpdate         = getRemote("WaveUpdate",         "RemoteEvent"),
 	RequestWaveStart   = getRemote("RequestWaveStart",   "RemoteEvent"),
 	RequestWaveEnd     = getRemote("RequestWaveEnd",     "RemoteEvent"),
@@ -37,4 +36,5 @@ return {
 	BuyShopItem        = getRemote("BuyShopItem",        "RemoteFunction"),
 	PlayerDefeated     = getRemote("PlayerDefeated",     "RemoteEvent"),
 	OpenShop           = getRemote("OpenShop",           "RemoteEvent"),
+	GetInventory       = getRemote("GetInventory",       "RemoteFunction"),
 }

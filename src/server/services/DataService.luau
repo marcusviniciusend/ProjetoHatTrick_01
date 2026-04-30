@@ -9,6 +9,7 @@ local DataService = {}
 
 -- Cache que guarda os dados de quem está online: { [Player] = table }
 DataService.Profiles = {}
+DataService.ProfileLoaded = Instance.new("BindableEvent")
 
 -- O "Molde" do seu save. Tudo que o jogador precisa ter fica aqui.
 local DATA_TEMPLATE = {
@@ -48,8 +49,9 @@ function DataService:LoadProfile(player)
 	if RunService:IsStudio() then
 		warn(("[DataService] Modo Studio: Mock de dados aplicado para %s."):format(player.Name))
 		data = reconcile({}, DATA_TEMPLATE)
-		data.Currency.Coins = 999999999 -- Quantidade absurda para testes
+		data.Currency.Coins = 999999999
 		self.Profiles[player] = data
+		self.ProfileLoaded:Fire(player)
 		return
 	end
 
@@ -67,6 +69,7 @@ function DataService:LoadProfile(player)
 			data = reconcile({}, DATA_TEMPLATE)
 		end
 		self.Profiles[player] = data
+		self.ProfileLoaded:Fire(player)
 	else
 		warn(("[DataService] ERRO CRÍTICO ao carregar dados de %s: %s"):format(player.Name, tostring(result)))
 		-- Se a internet do servidor piscar e não carregar, kicka o jogador pra ele não perder os dados.

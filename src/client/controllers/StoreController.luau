@@ -118,11 +118,10 @@ local function populateShopUI()
             -- 👉 AJUSTE AQUI: Como o seu jogo verifica o dinheiro?
             local function hasEnoughMoney()
                 local leaderstats = player:FindFirstChild("leaderstats")
-                -- Substitua "Coins" pelo nome da sua moeda no jogo!
-                if leaderstats and leaderstats:FindFirstChild("Coins") then
-                    return leaderstats.Coins.Value >= slotData.price
+                if leaderstats and leaderstats:FindFirstChild("Money") then
+                    return leaderstats.Money.Value >= slotData.price
                 end
-                return true -- Retorna true por padrão pra não bugar caso não ache
+                return true
             end
 
             local canAfford = hasEnoughMoney()

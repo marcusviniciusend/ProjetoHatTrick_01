@@ -13,8 +13,8 @@ local WaveService         = require(services.WaveService)
 local WeaponService       = require(services.WeaponService)
 local StoreService        = require(services.StoreService)
 
-DataService:init()        -- ← primeiro: outros services dependem dos dados do jogador
-PhysicsService:init()       -- ← primeiro: grupos precisam existir antes de qualquer spawn
+DataService:init()          -- ← primeiro: registra PlayerAdded antes de todos os outros
+PhysicsService:init()       -- ← grupos precisam existir antes de qualquer spawn
 CurrencyService:init()
 InventoryService:init()     -- ← antes de PlacementService e StoreService
 PlotService:init()
