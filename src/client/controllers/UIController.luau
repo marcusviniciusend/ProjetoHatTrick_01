@@ -64,10 +64,10 @@ function UIController:setState(newState: string)
 	PlacementController:resetAll()
 
 	if newState == STATE.Idle then
-		if inventarioUI then inventarioUI.Visible = false end
+		if inventarioUI then inventarioUI.Enabled = false end
 
 	elseif newState == STATE.InventoryOpen then
-		if inventarioUI then inventarioUI.Visible = true end
+		if inventarioUI then inventarioUI.Enabled = true end
 		-- Limpa seleção visual dos botões de torre
 		for btn in pairs(registeredButtons) do
 			local stroke = btn:FindFirstChildWhichIsA("UIStroke")
@@ -76,11 +76,11 @@ function UIController:setState(newState: string)
 		end
 
 	elseif newState == STATE.PlacingTower then
-		if inventarioUI then inventarioUI.Visible = true end
+		if inventarioUI then inventarioUI.Enabled = true end
 		-- PlacementController:selectTower() é chamado pelo registerButton logo em seguida
 
 	elseif newState == STATE.DeletingTower then
-		if inventarioUI then inventarioUI.Visible = false end
+		if inventarioUI then inventarioUI.Enabled = false end
 		PlacementController:toggleDeleteMode()
 	end
 
@@ -284,8 +284,8 @@ local function updateButtonStates(money)
 		local stats  = TowerStats[towerName]
 		local canBuy = stats and money >= stats.BasePrice
 
-		btn.AutoButtonColor   = canBuy
-		btn.ImageTransparency = canBuy and 0 or 0.5
+		btn.AutoButtonColor        = canBuy
+		btn.BackgroundTransparency = canBuy and 0.1 or 0.55
 
 		local priceLabel = btn:FindFirstChild("Price")
 		if priceLabel then
@@ -320,7 +320,7 @@ function UIController:init()
 		warn("[UIController] InventarioUI não encontrado no PlayerGui")
 		return
 	end
-	inventarioUI.Visible = false  -- estado inicial: Idle
+	inventarioUI.Enabled = false  -- estado inicial: Idle
 
 	local painel = inventarioUI:WaitForChild("Painel", 10)
 	if not painel then

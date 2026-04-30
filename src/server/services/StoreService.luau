@@ -1,11 +1,13 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace         = game:GetService("Workspace")
 
-local Remotes         = require(ReplicatedStorage.Shared.network.Remotes)
-local RarityData      = require(ReplicatedStorage.Shared.configs.RarityData)
-local StoreItems      = require(ReplicatedStorage.Shared.configs.StoreItems)
-local TowerStats      = require(ReplicatedStorage.Shared.configs.TowerStats)
-local CurrencyService = require(script.Parent.CurrencyService)
+local Remotes           = require(ReplicatedStorage.Shared.network.Remotes)
+local RarityData        = require(ReplicatedStorage.Shared.configs.RarityData)
+local StoreItems        = require(ReplicatedStorage.Shared.configs.StoreItems)
+local TowerStats        = require(ReplicatedStorage.Shared.configs.TowerStats)
+local CurrencyService   = require(script.Parent.CurrencyService)
+local InventoryService  = require(script.Parent.InventoryService)
 
 local StoreService = {}
 
@@ -117,10 +119,58 @@ local function handleBuy(player: Player, towerName: string)
 		                                           return { ok = false, reason = "Saldo insuficiente" } end
 
 	slot.stock -= 1
+	InventoryService:add(player, towerName)
 	syncAll()
 	print(("[StoreService] '%s' comprou '%s' — estoque: %d/%d"):format(
 		player.Name, towerName, slot.stock, slot.maxStock))
 	return { ok = true }
+end
+
+-- ── ProximityPrompt da loja (servidor garante visibilidade para todos) ─────
+
+local function setupHotspotPrompt()
+	local hotspotModel = Workspace:FindFirstChild("Hotspot")
+	if not hotspotModel then
+		warn("[StoreService] workspace.Hotspot não encontrado — prompt não criado")
+		return
+	end
+
+	local anchor = hotspotModel.PrimaryPart
+		or hotspotModel:FindFirstChild("BasePart")
+		or hotspotModel:FindFirstChildWhichIsA("BasePart", true)
+
+	if not anchor then
+		local part           = Instance.new("Part")
+		part.Name            = "StoreAnchor"
+		part.Size            = Vector3.new(4, 4, 4)
+		part.Anchored        = true
+		part.CanCollide      = false
+		part.CanQuery        = true
+		part.Transparency    = 1
+		local ok, pivot      = pcall(function() return hotspotModel:GetPivot() end)
+		if ok then part.CFrame = pivot end
+		part.Parent          = hotspotModel
+		hotspotModel.PrimaryPart = part
+		anchor               = part
+	end
+
+	-- Remove prompt antigo se existir (evita duplicatas em reinicializações)
+	local old = anchor:FindFirstChildOfClass("ProximityPrompt")
+	if old then old:Destroy() end
+
+	local prompt                     = Instance.new("ProximityPrompt")
+	prompt.ObjectText                = "Loja"
+	prompt.ActionText                = "Abrir"
+	prompt.KeyboardKeyCode           = Enum.KeyCode.E
+	prompt.HoldDuration              = 0
+	prompt.MaxActivationDistance     = 40
+	prompt.Parent                    = anchor
+
+	prompt.Triggered:Connect(function(player)
+		Remotes.OpenShop:FireClient(player)
+	end)
+
+	print("[StoreService] ProximityPrompt da loja criado em", anchor:GetFullName())
 end
 
 -- ── Init ───────────────────────────────────────────────────────────────────
@@ -135,6 +185,7 @@ function StoreService:init()
 	end)
 
 	Remotes.BuyShopItem.OnServerInvoke = handleBuy
+	task.spawn(setupHotspotPrompt)
 
 	task.spawn(function()
 		while true do

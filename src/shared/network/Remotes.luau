@@ -35,4 +35,6 @@ return {
 	WeaponFire         = getRemote("WeaponFire",         "RemoteEvent"),
 	ShopUpdated        = getRemote("ShopUpdated",        "RemoteEvent"),
 	BuyShopItem        = getRemote("BuyShopItem",        "RemoteFunction"),
+	PlayerDefeated     = getRemote("PlayerDefeated",     "RemoteEvent"),
+	OpenShop           = getRemote("OpenShop",           "RemoteEvent"),
 }

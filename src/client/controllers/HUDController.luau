@@ -204,6 +204,9 @@ function HUDController:init()
 
 	Remotes.WaveUpdate.OnClientEvent:Connect(onWaveUpdate)
 	Remotes.PhaseChanged.OnClientEvent:Connect(onPhaseChanged)
+	Remotes.PlayerDefeated.OnClientEvent:Connect(function(data)
+		showGameEnd(data and data.wave or 0)
+	end)
 end
 
 return HUDController

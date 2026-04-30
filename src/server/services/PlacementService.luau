@@ -5,9 +5,10 @@ local Shared          = ReplicatedStorage:WaitForChild("Shared")
 local TowerStats      = require(Shared.configs.TowerStats)
 local Remotes         = require(Shared.network.Remotes)
 
-local PlotService     = require(script.Parent.PlotService)
-local CurrencyService = require(script.Parent.CurrencyService)
-local TowerService    = require(script.Parent.TowerService)
+local PlotService       = require(script.Parent.PlotService)
+local CurrencyService   = require(script.Parent.CurrencyService)
+local TowerService      = require(script.Parent.TowerService)
+local InventoryService  = require(script.Parent.InventoryService)
 
 local PlacementService = {}
 
@@ -71,21 +72,25 @@ local function tryPlace(player, towerName, position)
 		return
 	end
 
-	if not CurrencyService:spendMoney(player, stats.BasePrice) then
-		warn_("'%s' sem saldo para '%s' ($%d)", player.Name, towerName, stats.BasePrice)
-		return
+	-- Verifica inventário primeiro; só cobra se não tiver unidade comprada na loja
+	local fromInventory = InventoryService:consume(player, towerName)
+	if not fromInventory then
+		if not CurrencyService:spendMoney(player, stats.BasePrice) then
+			warn_("'%s' sem saldo para '%s' ($%d)", player.Name, towerName, stats.BasePrice)
+			return
+		end
 	end
 
 	if not towersFolder then
 		warn_("Pasta de torres não encontrada — devolvendo saldo")
-		CurrencyService:addMoney(player, stats.BasePrice)
+		if not fromInventory then CurrencyService:addMoney(player, stats.BasePrice) end
 		return
 	end
 
 	local template = towersFolder:FindFirstChild(towerName)
 	if not template then
 		warn_("Modelo '%s' não encontrado — devolvendo saldo", towerName)
-		CurrencyService:addMoney(player, stats.BasePrice)
+		if not fromInventory then CurrencyService:addMoney(player, stats.BasePrice) end
 		return
 	end
 
@@ -195,6 +200,23 @@ function PlacementService:restoreSnapshot()
 	end
 
 	log("Snapshot restaurado: %d torre(s)", #savedSnapshot)
+end
+
+-- ── Remoção por dono ───────────────────────────────────────────────────────
+
+function PlacementService:destroyTowersForPlayer(ownerUserId: number)
+	local toDestroy = {}
+	for model, info in pairs(placedTowers) do
+		if info.owner == ownerUserId then
+			table.insert(toDestroy, model)
+		end
+	end
+	for _, model in ipairs(toDestroy) do
+		TowerService:unregisterTower(model)
+		placedTowers[model] = nil
+		if model.Parent then model:Destroy() end
+	end
+	log("Torres do userId %d removidas (%d)", ownerUserId, #toDestroy)
 end
 
 -- ── Phase provider ─────────────────────────────────────────────────────────

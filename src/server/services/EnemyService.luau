@@ -14,10 +14,14 @@ local activeEnemies  = {}
 -- { [plot: Model]: { waypoints: {BasePart}, base: Instance?, initialBaseHP: number } }
 local plotData       = {}
 
-local onRemovedCb    = nil
-local onGameOverCb   = nil
-local gameStopped    = false
-local _towerProvider = nil
+-- { [plot: Model]: true } — plots cuja base chegou a 0
+local defeatedPlots  = {}
+
+local onRemovedCb       = nil
+local onGameOverCb      = nil
+local onPlotDefeatedCb  = nil
+local gameStopped       = false
+local _towerProvider    = nil
 
 -- ── Setup ──────────────────────────────────────────────────────────────────
 
@@ -30,9 +34,6 @@ local function configureWaypoint(wp: BasePart)
 	wp.CastShadow   = false
 end
 
--- Carrega waypoints e base de cada Plot dentro de Map.Plots.
--- Estrutura esperada: Map > Plots > PlotN > Waypoints > 1, 2, 3…
---                                         > Base
 local function loadPlots()
 	local map = Workspace:FindFirstChild("Map")
 	local plotsFolder = map and map:FindFirstChild("Plots")
@@ -60,14 +61,34 @@ local function loadPlots()
 			end
 		end
 
-		local baseHP         = base and base:FindFirstChild("HP")
-		local initialBaseHP  = baseHP and (baseHP :: IntValue).Value or 100
+		local baseHP        = base and base:FindFirstChild("HP")
+		local initialBaseHP = baseHP and (baseHP :: IntValue).Value or 100
 
 		plotData[plot] = { waypoints = wps, base = base, initialBaseHP = initialBaseHP }
 		print(("[EnemyService] '%s': %d waypoint(s), base=%s"):format(
 			plot.Name, #wps, tostring(base ~= nil)))
 	end
 end
+
+-- ── Per-plot defeat ────────────────────────────────────────────────────────
+
+function EnemyService:_onPlotDefeated(plot)
+	if defeatedPlots[plot] then return end
+	defeatedPlots[plot] = true
+
+	-- Limpa inimigos deste plot; cada remoção conta para o contador de wave
+	for model, info in pairs(activeEnemies) do
+		if info.plot == plot then
+			activeEnemies[model] = nil
+			info.obj:destroy()
+			if onRemovedCb then onRemovedCb() end
+		end
+	end
+
+	if onPlotDefeatedCb then onPlotDefeatedCb(plot) end
+end
+
+-- ── Init ───────────────────────────────────────────────────────────────────
 
 function EnemyService:init(onRemovedCallback, onGameOverCallback)
 	onRemovedCb  = onRemovedCallback
@@ -77,6 +98,8 @@ function EnemyService:init(onRemovedCallback, onGameOverCallback)
 
 	RunService.Heartbeat:Connect(function(dt)
 		if gameStopped then return end
+
+		local toDefeat = {}
 
 		for model, info in pairs(activeEnemies) do
 			if not model.Parent then
@@ -91,6 +114,10 @@ function EnemyService:init(onRemovedCallback, onGameOverCallback)
 				continue
 			end
 
+			-- Inimigos de plots já derrotados não devem existir (foram limpos),
+			-- mas este guard evita processamento caso a remoção ainda não propagou.
+			if defeatedPlots[info.plot] then continue end
+
 			local pData        = plotData[info.plot]
 			local activeTowers = _towerProvider and _towerProvider() or nil
 			local gameOver     = info.obj:update(
@@ -103,41 +130,30 @@ function EnemyService:init(onRemovedCallback, onGameOverCallback)
 			if gameOver then
 				activeEnemies[model] = nil
 				info.obj:destroy()
-				EnemyService:_onGameOver()
-				break
+				toDefeat[info.plot] = true
 			end
+		end
+
+		-- Processa derrotas após a iteração para evitar modificação concorrente
+		for plot in pairs(toDefeat) do
+			self:_onPlotDefeated(plot)
 		end
 	end)
 end
 
-function EnemyService:clearAllEnemies()
-	for _, info in pairs(activeEnemies) do
-		info.obj:destroy()
-	end
-	activeEnemies = {}
-end
-
--- Restaura o HP da base de todos os plots para o valor inicial.
-function EnemyService:resetBases()
-	for _, pData in pairs(plotData) do
-		local base = pData.base
-		if not base then continue end
-		local hp = base:FindFirstChild("HP")
-		if hp then (hp :: IntValue).Value = pData.initialBaseHP end
-	end
-end
-
-function EnemyService:_onGameOver()
-	gameStopped = true
-	self:clearAllEnemies()
-	if onGameOverCb then onGameOverCb() end
-end
-
 -- ── API pública ────────────────────────────────────────────────────────────
 
--- Spawna um inimigo no caminho do plot indicado.
+function EnemyService:setTowerProvider(fn)
+	_towerProvider = fn
+end
+
+function EnemyService:setPlotDefeatedCallback(fn)
+	onPlotDefeatedCb = fn
+end
+
 function EnemyService:spawn(enemyName: string, plot: Model, statsOverride)
 	if gameStopped then return nil end
+	if defeatedPlots[plot] then return nil end
 
 	local pData = plotData[plot]
 	if not pData or #pData.waypoints == 0 then
@@ -160,7 +176,6 @@ function EnemyService:spawn(enemyName: string, plot: Model, statsOverride)
 		return nil
 	end
 
-	-- Movimento via PivotTo — física não deve simular
 	for _, part in ipairs(clone:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.Anchored   = true
@@ -168,13 +183,12 @@ function EnemyService:spawn(enemyName: string, plot: Model, statsOverride)
 		end
 	end
 
-	-- Parear antes de GetBoundingBox para garantir coordenadas de mundo corretas
 	clone.Parent = Workspace
 	PhysicsService:assignToGroup(clone, "Enemies")
 
 	local boundCF, boundSize = clone:GetBoundingBox()
-	local pivotY          = clone:GetPivot().Position.Y
-	local pivotAboveFloor = pivotY - (boundCF.Position.Y - boundSize.Y / 2)
+	local pivotY             = clone:GetPivot().Position.Y
+	local pivotAboveFloor    = pivotY - (boundCF.Position.Y - boundSize.Y / 2)
 
 	local wp1 = pData.waypoints[1].Position
 	clone:PivotTo(CFrame.new(wp1.X, wp1.Y + pivotAboveFloor, wp1.Z))
@@ -188,17 +202,29 @@ function EnemyService:spawn(enemyName: string, plot: Model, statsOverride)
 	return clone
 end
 
-function EnemyService:setTowerProvider(fn)
-	_towerProvider = fn
+function EnemyService:clearAllEnemies()
+	for _, info in pairs(activeEnemies) do
+		info.obj:destroy()
+	end
+	activeEnemies = {}
+end
+
+function EnemyService:resetBases()
+	for _, pData in pairs(plotData) do
+		local base = pData.base
+		if not base then continue end
+		local hp = base:FindFirstChild("HP")
+		if hp then (hp :: IntValue).Value = pData.initialBaseHP end
+	end
 end
 
 function EnemyService:reset()
-	gameStopped = false
+	gameStopped  = false
+	defeatedPlots = {}
 	self:clearAllEnemies()
 end
 
 function EnemyService:getActive()
-	-- Retorna { [Model]: EnemyClass } para compatibilidade com TowerService
 	local out = {}
 	for model, info in pairs(activeEnemies) do
 		out[model] = info.obj
@@ -210,6 +236,10 @@ function EnemyService:getActiveCount()
 	local n = 0
 	for _ in pairs(activeEnemies) do n += 1 end
 	return n
+end
+
+function EnemyService:isPlotDefeated(plot)
+	return defeatedPlots[plot] == true
 end
 
 return EnemyService

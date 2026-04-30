@@ -1,20 +1,24 @@
 local services = script.Parent:WaitForChild("services")
 
 -- Deps resolvidos em ordem: cada service só é iniciado após suas deps
-local PhysicsService   = require(services.PhysicsService)
-local CurrencyService  = require(services.CurrencyService)
-local PlotService      = require(services.PlotService)
-local TowerService     = require(services.TowerService)    -- depende de EnemyService (lazy via require)
-local PlacementService = require(services.PlacementService) -- depende de Currency, Plot, Tower
-local WaveService      = require(services.WaveService)     -- inicia EnemyService internamente
-local WeaponService    = require(services.WeaponService)
-local StoreService     = require(services.StoreService)
+local PhysicsService      = require(services.PhysicsService)
+local CurrencyService     = require(services.CurrencyService)
+local InventoryService    = require(services.InventoryService)
+local PlotService         = require(services.PlotService)
+local TowerService        = require(services.TowerService)
+local PlacementService    = require(services.PlacementService)
+local LeaderboardService  = require(services.LeaderboardService)
+local WaveService         = require(services.WaveService)
+local WeaponService       = require(services.WeaponService)
+local StoreService        = require(services.StoreService)
 
-PhysicsService:init()    -- ← primeiro: grupos precisam existir antes de qualquer spawn
+PhysicsService:init()       -- ← primeiro: grupos precisam existir antes de qualquer spawn
 CurrencyService:init()
+InventoryService:init()     -- ← antes de PlacementService e StoreService
 PlotService:init()
 TowerService:init()
 PlacementService:init()
-WaveService:init()       -- ← inicia EnemyService + agenda Wave 1
+LeaderboardService:init()   -- ← antes do WaveService (WaveService depende dele)
+WaveService:init()          -- ← inicia EnemyService + agenda Wave 1
 WeaponService:init()
 StoreService:init()
