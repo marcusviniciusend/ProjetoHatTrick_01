@@ -16,8 +16,8 @@ local DATA_TEMPLATE = {
 		Coins = 100,
 	},
 	Inventory = {
-		Towers = {},    -- Ex: {"Sniper", "Minigun"}
-		Brainrots = {}  -- Ex: {"Meme1", "Meme2"}
+		Towers = {},    -- Ex: {"cannon", "archer_tower"}
+		Brainrots = {}  -- Ex: {"jl din din din", "dung dung bumbum"}
 	},
 	Stats = {
 		TimePlayed = 0
