@@ -39,6 +39,8 @@ local phaseLocked  = false  -- true durante CombatPhase: bloqueia toda transiç�
 local shortcutBtn1 = nil
 local shortcutBtn2 = nil
 
+local updateInventoryUI  -- forward declaration: definida abaixo, mas referenciada em setState
+
 local function updateShortcutHighlights()
 	local function apply(btn, active)
 		if not btn then return end
@@ -82,7 +84,7 @@ function UIController:setState(newState: string)
 
 	elseif newState == STATE.DeletingTower then
 		if inventarioUI then inventarioUI.Enabled = false end
-		PlacementController:toggleDeleteMode()
+		PlacementController:setDeleteMode(true)
 	end
 
 	updateShortcutHighlights()
@@ -293,7 +295,7 @@ local function highlightButton(btn)
 	):Play()
 end
 
-local function updateInventoryUI()
+updateInventoryUI = function(placedTowerName: string?)
 	local towers = Remotes.GetInventory:InvokeServer()
 	local counts = {}
 	for _, name in ipairs(towers) do
@@ -304,6 +306,10 @@ local function updateInventoryUI()
 		btn.Visible  = count > 0
 		local lbl    = btn:FindFirstChild("labelQtd")
 		if lbl then lbl.Text = count .. "x" end
+	end
+	-- Saiu do estoque? Volta ao inventário para o jogador escolher outra torre.
+	if placedTowerName and (counts[placedTowerName] or 0) == 0 then
+		UIController:setState(STATE.InventoryOpen)
 	end
 end
 
@@ -325,6 +331,11 @@ end
 
 function UIController:init()
 	createShortcutBar()
+
+	-- Após colocação confirmada pelo servidor: atualiza contagem e sai do build mode se esgotou.
+	PlacementController:onTowerPlaced(function(towerName)
+		task.spawn(updateInventoryUI, towerName)
+	end)
 
 	inventarioUI = gui:WaitForChild("InventarioUI", 10)
 	if not inventarioUI then

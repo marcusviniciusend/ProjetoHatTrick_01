@@ -24,7 +24,7 @@ local function getRemote(name, className)
 end
 
 return {
-	PlaceTower         = getRemote("PlaceTower",         "RemoteEvent"),
+	PlaceTower         = getRemote("PlaceTower",         "RemoteFunction"),
 	WaveUpdate         = getRemote("WaveUpdate",         "RemoteEvent"),
 	RequestWaveStart   = getRemote("RequestWaveStart",   "RemoteEvent"),
 	RequestWaveEnd     = getRemote("RequestWaveEnd",     "RemoteEvent"),

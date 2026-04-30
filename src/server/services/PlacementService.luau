@@ -56,56 +56,57 @@ end
 
 -- ── Placement ──────────────────────────────────────────────────────────────
 
-local function tryPlace(player, towerName, quad)
+local function tryPlace(player, towerName, quad): boolean
 	if _phaseProvider and _phaseProvider() ~= "BuildPhase" then
 		warn_("'%s' tentou construir durante CombatPhase", player.Name)
-		return
+		return false
 	end
 
 	-- Anti-hack: quad deve ser um BasePart "plotQuad" válido e desocupado
 	if not (typeof(quad) == "Instance" and quad:IsA("BasePart") and quad.Name == "plotQuad") then
 		warn_("'%s' enviou quad inválido", player.Name)
-		return
+		return false
 	end
 	if quad:GetAttribute("Ocupado") == true then
 		warn_("'%s' tentou colocar em quad já ocupado", player.Name)
-		return
+		return false
 	end
 
 	local stats = TowerStats[towerName]
 	if not stats then
 		warn_("Torre inválida: '%s'", towerName)
-		return
+		return false
 	end
 
 	if not PlotService:isInsidePlot(player, quad.Position) then
 		warn_("'%s' tentou colocar fora do seu plot", player.Name)
-		return
+		return false
 	end
 
 	-- Somente torres do inventário podem ser construídas
 	if not InventoryService:consume(player, towerName) then
 		warn_("'%s' não tem '%s' no inventário", player.Name, towerName)
-		return
+		return false
 	end
 
 	if not towersFolder then
 		warn_("Pasta de torres não encontrada — devolvendo item")
 		InventoryService:add(player, towerName)
-		return
+		return false
 	end
 
 	local template = towersFolder:FindFirstChild(towerName)
 	if not template then
 		warn_("Modelo '%s' não encontrado — devolvendo item", towerName)
 		InventoryService:add(player, towerName)
-		return
+		return false
 	end
 
 	local position = Vector3.new(quad.Position.X, quad.Position.Y + (quad.Size.Y / 2), quad.Position.Z)
 	local clone    = template:Clone()
 	spawnTower(clone, towerName, CFrame.new(position), player.UserId, 1, quad)
 	log("'%s' colocou '%s' em %s", player.Name, towerName, tostring(quad.Name))
+	return true
 end
 
 -- ── Ação na torre (Upgrade / Sell) ─────────────────────────────────────────
@@ -164,6 +165,16 @@ local function handleTowerAction(player: Player, tower: Model, action: string): 
 
 		CurrencyService:addMoney(player, refund)
 		log("'%s' vendeu '%s' por $%d", player.Name, info.towerName, refund)
+		return true
+
+	elseif action == "Store" then
+		TowerService:unregisterTower(tower)
+		if info.quad then info.quad:SetAttribute("Ocupado", false) end
+		placedTowers[tower] = nil
+		tower:Destroy()
+
+		InventoryService:add(player, info.towerName)
+		log("'%s' guardou '%s' no inventário", player.Name, info.towerName)
 		return true
 	end
 
@@ -252,7 +263,16 @@ function PlacementService:init()
 		warn_("ReplicatedStorage.towers não encontrado — mova a pasta de torres para ReplicatedStorage")
 	end
 
-	Remotes.PlaceTower.OnServerEvent:Connect(tryPlace)
+	-- RemoteFunction: retorna true/false ao cliente; pcall evita que erros internos
+	-- propaguem como exceção e travam o InvokeServer do cliente indefinidamente.
+	Remotes.PlaceTower.OnServerInvoke = function(player, towerName, quad)
+		local ok, result = pcall(tryPlace, player, towerName, quad)
+		if not ok then
+			warn_("Erro interno em tryPlace: %s", tostring(result))
+			return false
+		end
+		return result
+	end
 
 	-- Unifica Upgrade e Sell numa única RemoteFunction com retorno booleano
 	Remotes.RequestTowerAction.OnServerInvoke = function(player, tower, action)

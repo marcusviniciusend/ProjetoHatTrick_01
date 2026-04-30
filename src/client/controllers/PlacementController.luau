@@ -30,6 +30,7 @@ local deleteHighlight   = nil   -- Highlight aplicado à torre sob o cursor no m
 local modoConstrucaoAtivo = false
 local modoDeletarAtivo    = false
 local torreSelecionada    = nil
+local onTowerPlacedCb     = nil   -- callback(towerName) disparado após colocação confirmada
 
 -- ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -222,15 +223,20 @@ function PlacementController:init()
 		if modoConstrucaoAtivo and torreSelecionada then
 			local quad = getHoveredQuad()
 			if quad and quad:GetAttribute("Ocupado") ~= true then
-				Remotes.PlaceTower:FireServer(torreSelecionada, quad)
+				local towerSnap = torreSelecionada  -- captura antes do yield assíncrono
+				task.spawn(function()
+					local ok = Remotes.PlaceTower:InvokeServer(towerSnap, quad)
+					if ok and onTowerPlacedCb then
+						onTowerPlacedCb(towerSnap)
+					end
+				end)
 			end
 
 		elseif modoDeletarAtivo then
 			local tower = getHoveredTowerOnMyPlot()
 			if tower then
-				-- Deleção = venda instantânea (50% de reembolso, validado no servidor)
 				task.spawn(function()
-					Remotes.RequestTowerAction:InvokeServer(tower, "Sell")
+					Remotes.RequestTowerAction:InvokeServer(tower, "Store")
 				end)
 			end
 		end
@@ -272,14 +278,14 @@ function PlacementController:toggleBuildMode()
 	blocoFantasma.Transparency = (modoConstrucaoAtivo and not ghostModel) and 0.8 or 1
 end
 
-function PlacementController:toggleDeleteMode()
-	modoConstrucaoAtivo = false
+function PlacementController:setDeleteMode(active: boolean)
+	modoConstrucaoAtivo    = false
 	destroyGhost()
-	torreSelecionada = nil
-	modoDeletarAtivo = not modoDeletarAtivo
-	blocoFantasma.Transparency = 1   -- blocoFantasma não é usado no modo deletar
+	torreSelecionada       = nil
+	modoDeletarAtivo       = active
+	blocoFantasma.Transparency = 1
 
-	if modoDeletarAtivo then
+	if active then
 		mouse.Icon = DELETE_CURSOR_ID
 	else
 		mouse.Icon = ""
@@ -309,6 +315,12 @@ function PlacementController:resetAll()
 	mouse.Icon          = ""
 	clearDeleteHighlight()
 	hideAll()
+end
+
+-- Registra o callback chamado com (towerName) após cada colocação bem-sucedida.
+-- Usado pelo UIController para atualizar o inventário e sair do build mode se esgotou.
+function PlacementController:onTowerPlaced(cb: (towerName: string) -> ())
+	onTowerPlacedCb = cb
 end
 
 return PlacementController
