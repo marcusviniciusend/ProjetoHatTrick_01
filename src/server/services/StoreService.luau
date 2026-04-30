@@ -113,10 +113,10 @@ end
 -- não há race condition real — dois InvokeServer simultâneos são enfileirados.
 local function handleBuy(player: Player, towerName: string)
 	local slot = currentShopSlots[towerName]
-	if not slot                               then return { ok = false, reason = "Item indisponível"  } end
-	if slot.stock <= 0                        then return { ok = false, reason = "Esgotado"           } end
+	if not slot then return { ok = false, reason = "Item indisponível"  } end
+	if slot.stock <= 0 then return { ok = false, reason = "Esgotado"           } end
 	if not CurrencyService:spendMoney(player, slot.price) then
-		                                           return { ok = false, reason = "Saldo insuficiente" } end
+		return { ok = false, reason = "Saldo insuficiente" } end
 
 	slot.stock -= 1
 	InventoryService:add(player, towerName)
@@ -129,48 +129,25 @@ end
 -- ── ProximityPrompt da loja (servidor garante visibilidade para todos) ─────
 
 local function setupHotspotPrompt()
-	local hotspotModel = Workspace:FindFirstChild("Hotspot")
-	if not hotspotModel then
-		warn("[StoreService] workspace.Hotspot não encontrado — prompt não criado")
-		return
-	end
+    local hotspotModel = workspace:FindFirstChild("Hotspot")
+	
+    if not hotspotModel then
+        warn("[StoreService] Modelo 'Hotspot' não encontrado no Workspace.")
+        return
+    end
 
-	local anchor = hotspotModel.PrimaryPart
-		or hotspotModel:FindFirstChild("BasePart")
-		or hotspotModel:FindFirstChildWhichIsA("BasePart", true)
+    local prompt = hotspotModel:FindFirstChildWhichIsA("ProximityPrompt", true)
 
-	if not anchor then
-		local part           = Instance.new("Part")
-		part.Name            = "StoreAnchor"
-		part.Size            = Vector3.new(4, 4, 4)
-		part.Anchored        = true
-		part.CanCollide      = false
-		part.CanQuery        = true
-		part.Transparency    = 1
-		local ok, pivot      = pcall(function() return hotspotModel:GetPivot() end)
-		if ok then part.CFrame = pivot end
-		part.Parent          = hotspotModel
-		hotspotModel.PrimaryPart = part
-		anchor               = part
-	end
+    if not prompt then
+        warn("[StoreService] ProximityPrompt não encontrado dentro do modelo 'Hotspot'.")
+        return
+    end
 
-	-- Remove prompt antigo se existir (evita duplicatas em reinicializações)
-	local old = anchor:FindFirstChildOfClass("ProximityPrompt")
-	if old then old:Destroy() end
+    prompt.Triggered:Connect(function(player)
+        Remotes.OpenShop:FireClient(player)
+    end)
 
-	local prompt                     = Instance.new("ProximityPrompt")
-	prompt.ObjectText                = "Loja"
-	prompt.ActionText                = "Abrir"
-	prompt.KeyboardKeyCode           = Enum.KeyCode.E
-	prompt.HoldDuration              = 0
-	prompt.MaxActivationDistance     = 40
-	prompt.Parent                    = anchor
-
-	prompt.Triggered:Connect(function(player)
-		Remotes.OpenShop:FireClient(player)
-	end)
-
-	print("[StoreService] ProximityPrompt da loja criado em", anchor:GetFullName())
+    print("[StoreService] Sistema de loja conectado ao prompt em:", prompt:GetFullName())
 end
 
 -- ── Init ───────────────────────────────────────────────────────────────────
