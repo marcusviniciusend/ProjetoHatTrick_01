@@ -8,6 +8,7 @@ export type RarityInfo = {
 local RarityData: { [string]: RarityInfo } = {
 	Comum    = { Weight = 60, MaxStock = 5, Color = Color3.fromRGB(180, 180, 180) },
 	Raro     = { Weight = 30, MaxStock = 3, Color = Color3.fromRGB(80, 120, 220)  },
+	Epico     = { Weight = 30, MaxStock = 3, Color = Color3.fromRGB(94, 28, 156)  },
 	Lendario = { Weight = 10, MaxStock = 1, Color = Color3.fromRGB(255, 165, 0)   },
 }
 
