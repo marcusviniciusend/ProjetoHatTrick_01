@@ -49,8 +49,8 @@ local TowerStats: { [string]: TowerData } = {
 		Color      = Color3.fromRGB(255, 255, 0),
 		TargetMode = "First",
 		Levels     = {
-			[1] = { Damage = 15, Range = 18, Cooldown = 1.0, UpgradeCost = 150 },
-			[2] = { Damage = 25, Range = 20, Cooldown = 0.8, UpgradeCost = 300, Color = Color3.fromRGB(255, 200, 50) },
+			[1] = { Damage = 15, Range = 50, Cooldown = 1.0, UpgradeCost = 150 },
+			[2] = { Damage = 25, Range = 60, Cooldown = 0.8, UpgradeCost = 300, Color = Color3.fromRGB(255, 200, 50) },
 		},
 	},
 }

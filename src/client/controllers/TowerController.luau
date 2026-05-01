@@ -57,7 +57,7 @@ local function showRange(model: Model)
 	rangeIndicator.CanQuery    = false
 
 	local pivot = model:GetPivot()
-	rangeIndicator.CFrame = CFrame.new(pivot.Position.X, pivot.Position.Y + 0.25, pivot.Position.Z)
+	rangeIndicator.CFrame = CFrame.new(pivot.Position.X, pivot.Position.Y + 0.25, pivot.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
 	rangeIndicator.Parent = Workspace
 end
 

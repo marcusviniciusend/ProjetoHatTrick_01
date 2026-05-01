@@ -9,6 +9,8 @@ local PlacementController = require(script.Parent.PlacementController)
 
 local UIController = {}
 
+local PREFIX = "[UIController Debug] " -- Prefixo para acharmos os prints facilmente no Output
+
 local player       = Players.LocalPlayer
 local gui          = player:WaitForChild("PlayerGui")
 
@@ -30,17 +32,16 @@ local STATE = {
 local currentState = STATE.Idle
 local phaseLocked  = false
 
--- Referências à estrutura do TowersGui (antigo InventarioUI)
+-- Referências à estrutura do TowersGui
 local scrollingFrame = nil
 local itemCardTemplate = nil
 
--- Guarda os cards criados dinamicamente: towerName -> card instance
 local activeCards = {}
 local selectedTowerName = nil
 
 local updateInventoryUI  -- forward declaration
 
--- ── Shortcut Highlights (Agora usa os botões do Studio) ───────────────
+-- ── Shortcut Highlights ───────────────
 
 local function updateShortcutHighlights()
     local function apply(btn, active)
@@ -50,7 +51,6 @@ local function updateShortcutHighlights()
             btn.BackgroundColor3 = Color3.fromRGB(55, 45, 10)
             if stroke then stroke.Color = Color3.fromRGB(255, 210, 40); stroke.Thickness = 3 end
         else
-            -- Cor original do seu botão (ajuste se precisar)
             btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
             if stroke then stroke.Color = Color3.fromRGB(80, 80, 80);  stroke.Thickness = 2 end
         end
@@ -63,21 +63,33 @@ end
 -- ── State Machine ────────────────────────────────────────────────────────────
 
 function UIController:setState(newState: string)
-    if phaseLocked and newState ~= STATE.Idle then return end
+    print(PREFIX .. "Tentando mudar de estado: " .. tostring(currentState) .. " -> " .. tostring(newState))
+    
+    if phaseLocked and newState ~= STATE.Idle then 
+        warn(PREFIX .. "Bloqueado! Fase de combate ativa.")
+        return 
+    end
     if newState == currentState then return end
+    
     currentState = newState
+    print(PREFIX .. "Estado atualizado com sucesso para: " .. currentState)
 
     PlacementController:resetAll()
 
     if newState == STATE.Idle then
-        if towersGui then towersGui.Enabled = false end
+        if towersGui then 
+            towersGui.Enabled = false 
+            print(PREFIX .. "Fechando TowersGui")
+        end
         selectedTowerName = nil
 
     elseif newState == STATE.InventoryOpen then
-        if towersGui then towersGui.Enabled = true end
+        if towersGui then 
+            towersGui.Enabled = true 
+            print(PREFIX .. "Abrindo TowersGui")
+        end
         task.spawn(updateInventoryUI)
         
-        -- Limpa seleção visual dos cards
         for _, card in pairs(activeCards) do
             local stroke = card:FindFirstChildWhichIsA("UIStroke")
             if stroke then stroke.Color = Color3.fromRGB(0, 0, 0); stroke.Thickness = 1 end
@@ -86,9 +98,11 @@ function UIController:setState(newState: string)
 
     elseif newState == STATE.PlacingTower then
         if towersGui then towersGui.Enabled = true end
+        print(PREFIX .. "Modo de colocação ativado para: " .. tostring(selectedTowerName))
 
     elseif newState == STATE.DeletingTower then
         if towersGui then towersGui.Enabled = false end
+        print(PREFIX .. "Modo de deletar ativado")
         PlacementController:setDeleteMode(true)
         selectedTowerName = nil
     end
@@ -117,6 +131,8 @@ end
 local function createCard(towerName: string, count: number)
     if not itemCardTemplate or not scrollingFrame then return end
 
+    print(PREFIX .. "Criando card para torre: " .. towerName)
+
     local card = itemCardTemplate:Clone()
     card.Name = towerName
     card.Visible = true
@@ -132,8 +148,8 @@ local function createCard(towerName: string, count: number)
     local clickTarget = card:IsA("GuiButton") and card or card:FindFirstChildWhichIsA("GuiButton")
 
     if clickTarget then
-        -- Quando CLICAR na torre
         clickTarget.MouseButton1Click:Connect(function()
+            print(PREFIX .. "Clicou no card da torre: " .. towerName)
             resetCards()
             highlightCard(card)
             selectedTowerName = towerName
@@ -142,22 +158,19 @@ local function createCard(towerName: string, count: number)
             PlacementController:selectTower(towerName, stats and stats.Size, stats and stats.Color)
         end)
         
-        -- Quando PASSAR O MOUSE (Hover para os Stats)
         clickTarget.MouseEnter:Connect(function()
             local stats = TowerStats[towerName]
             if stats and stats.Levels and statsPanel then
                 local lvl1 = stats.Levels[1]
-                
-                -- Atualiza os textos dos retângulos (Ajuste os nomes conforme seu Studio)
                 if statsPanel:FindFirstChild("DmgLabel") then statsPanel.DmgLabel.Text = "Dano: " .. (lvl1.Damage or 0) end
                 if statsPanel:FindFirstChild("RangeLabel") then statsPanel.RangeLabel.Text = "Alcance: " .. (lvl1.Range or 0) end
                 if statsPanel:FindFirstChild("SpeedLabel") then statsPanel.SpeedLabel.Text = "Veloc.: " .. (lvl1.Cooldown or 0) .. "s" end
-                
                 statsPanel.Visible = true
+            else
+                warn(PREFIX .. "StatsPanel ou TowerStats não encontrados no Hover para: " .. towerName)
             end
         end)
         
-        -- Quando TIRAR O MOUSE
         clickTarget.MouseLeave:Connect(function()
             if statsPanel then statsPanel.Visible = false end
         end)
@@ -204,7 +217,6 @@ updateInventoryUI = function(placedTowerName: string?)
 end
 
 -- ── Tower Info Panel (Upgrade/Sell) ─────────────────────────────────────────
--- (MANTIDO EXATAMENTE COMO ESTAVA)
 
 local towerInfoPanel = nil
 local nameLabel      = nil
@@ -291,18 +303,20 @@ end
 -- ── Init ─────────────────────────────────────────────────────────────────────
 
 function UIController:init()
+    print(PREFIX .. "Iniciando...")
     
     -- 1. Referências das GUIs no Studio
-    hotbarGui = gui:WaitForChild("HotbarGui", 10)
-    towersGui = gui:WaitForChild("TowersGui", 10)
+    hotbarGui = gui:WaitForChild("HotbarGui", 5)
+    towersGui = gui:WaitForChild("TowersGui", 5)
     
     if hotbarGui then
+        print(PREFIX .. "HotbarGui encontrada!")
         local hotbarMain = hotbarGui:WaitForChild("MainFrame")
         buildBtn = hotbarMain:WaitForChild("Build_btn")
         deleteBtn = hotbarMain:WaitForChild("Delete_btn")
         
-        -- Conecta os botões da Hotbar
         buildBtn.MouseButton1Click:Connect(function()
+            print(PREFIX .. "Botão Build_btn clicado na UI")
             if currentState == STATE.InventoryOpen or currentState == STATE.PlacingTower then
                 self:setState(STATE.Idle)
             else
@@ -311,34 +325,43 @@ function UIController:init()
         end)
 
         deleteBtn.MouseButton1Click:Connect(function()
+            print(PREFIX .. "Botão Delete_btn clicado na UI")
             if currentState == STATE.DeletingTower then
                 self:setState(STATE.Idle)
             else
                 self:setState(STATE.DeletingTower)
             end
         end)
+    else
+        warn(PREFIX .. "HotbarGui NÃO encontrada!")
     end
 
     if towersGui then
+        print(PREFIX .. "TowersGui encontrada!")
         towersGui.Enabled = false
         statsPanel = towersGui:WaitForChild("StatsPanel", 5)
         if statsPanel then statsPanel.Visible = false end
         
         local mainFrame = towersGui:WaitForChild("MainFrame")
-        -- Pode ser o direto no MainFrame ou dentro de um BackGround (ajuste conforme seu studio)
         scrollingFrame = mainFrame:FindFirstChild("ScrollingFrame") or mainFrame
         
-        -- Procura o Template nas pastas (Templates ou direto no Frame)
         local templates = towersGui:FindFirstChild("Templates")
         if templates then
             itemCardTemplate = templates:FindFirstChild("hbItem") or templates:FindFirstChild("ItemCard")
+            print(PREFIX .. "Procurando template na pasta Templates...")
         else
             itemCardTemplate = scrollingFrame:FindFirstChild("ItemCard") or scrollingFrame:FindFirstChild("hbItem")
+            print(PREFIX .. "Procurando template direto no ScrollingFrame...")
         end
         
         if itemCardTemplate then
-            itemCardTemplate.Parent = nil -- Esconde o original
+            print(PREFIX .. "Template do Card encontrado com sucesso!")
+            itemCardTemplate.Parent = nil
+        else
+            warn(PREFIX .. "Template do Card NÃO encontrado!")
         end
+    else
+        warn(PREFIX .. "TowersGui NÃO encontrada! Verifique o nome no Explorer.")
     end
 
     PlacementController:onTowerPlaced(function(towerName)
@@ -346,7 +369,7 @@ function UIController:init()
     end)
 
     -- Dinheiro
-    local leaderstats = player:WaitForChild("leaderstats", 10)
+    local leaderstats = player:WaitForChild("leaderstats", 5)
     if leaderstats then
         local money = leaderstats:WaitForChild("Money")
         money:GetPropertyChangedSignal("Value"):Connect(function()
@@ -354,7 +377,7 @@ function UIController:init()
         end)
     end
 
-    -- Tower Info Panel (Upgrade/Sell)
+    -- Tower Info Panel
     towerInfoPanel = gui:FindFirstChild("TowerInfoPanel", true)
     if towerInfoPanel then
         towerInfoPanel.Visible = false
@@ -369,7 +392,7 @@ function UIController:init()
             upgradeButton.MouseButton1Click:Connect(function()
                 if not currentTower then return end
                 local ok = Remotes.RequestTowerAction:InvokeServer(currentTower, "Upgrade")
-                if not ok then warn("[UIController] Upgrade negado") end
+                if not ok then warn(PREFIX .. "Upgrade negado") end
             end)
         end
         if sellButton then
@@ -385,24 +408,30 @@ function UIController:init()
                 require(script.Parent.TowerController):hideRange()
             end)
         end
+    else
+        warn(PREFIX .. "TowerInfoPanel não encontrado (Ignorar se ainda não criou)")
     end
 
     -- Inputs (Teclado)
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
+        
         if input.KeyCode == Enum.KeyCode.One then
+            print(PREFIX .. "Tecla '1' pressionada. Estado atual: " .. currentState)
             if currentState == STATE.InventoryOpen or currentState == STATE.PlacingTower then
                 self:setState(STATE.Idle)
             else
                 self:setState(STATE.InventoryOpen)
             end
         elseif input.KeyCode == Enum.KeyCode.Two then
+            print(PREFIX .. "Tecla '2' pressionada. Estado atual: " .. currentState)
             if currentState == STATE.DeletingTower then
                 self:setState(STATE.Idle)
             else
                 self:setState(STATE.DeletingTower)
             end
         elseif input.KeyCode == Enum.KeyCode.Escape then
+            print(PREFIX .. "Tecla 'Esc' pressionada.")
             if currentState == STATE.PlacingTower then
                 self:setState(STATE.InventoryOpen)
             else
@@ -413,6 +442,7 @@ function UIController:init()
 
     -- Fases
     Remotes.PhaseChanged.OnClientEvent:Connect(function(data)
+        print(PREFIX .. "Fase alterada para: " .. tostring(data.phase))
         if data.phase == "CombatPhase" then
             phaseLocked = true
             self:setState(STATE.Idle)
@@ -425,6 +455,8 @@ function UIController:init()
             end)
         end
     end)
+    
+    print(PREFIX .. "Inicialização concluída!")
 end
 
 return UIController
