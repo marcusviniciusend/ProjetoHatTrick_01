@@ -2,6 +2,7 @@ local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local TowerStats = require(ReplicatedStorage.Shared.configs.TowerStats)
+local Remotes    = require(ReplicatedStorage.Shared.network.Remotes)
 
 local TOWER_TAG    = "Tower"
 local MELEE_RANGE  = 5
@@ -185,6 +186,7 @@ function TowerClass:update(dt: number, activeEnemies: ActiveEnemies)
 	if target then
 		self._cooldownTimer = self._stats.Cooldown
 		target:takeDamage(self._stats.Damage)
+		Remotes.TowerAttacked:FireAllClients(self.model, target.model, self.name)
 	end
 end
 

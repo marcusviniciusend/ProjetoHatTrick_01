@@ -37,4 +37,5 @@ return {
 	PlayerDefeated     = getRemote("PlayerDefeated",     "RemoteEvent"),
 	OpenShop           = getRemote("OpenShop",           "RemoteEvent"),
 	GetInventory       = getRemote("GetInventory",       "RemoteFunction"),
+	TowerAttacked      = getRemote("TowerAttacked",      "RemoteEvent"),
 }
