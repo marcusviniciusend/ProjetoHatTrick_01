@@ -38,4 +38,5 @@ return {
 	OpenShop           = getRemote("OpenShop",           "RemoteEvent"),
 	GetInventory       = getRemote("GetInventory",       "RemoteFunction"),
 	TowerAttacked      = getRemote("TowerAttacked",      "RemoteEvent"),
+	RequestSellItem    = getRemote("RequestSellItem",    "RemoteFunction"),
 }

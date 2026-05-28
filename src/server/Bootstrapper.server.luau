@@ -12,6 +12,7 @@ local LeaderboardService  = require(services.LeaderboardService)
 local WaveService         = require(services.WaveService)
 local WeaponService       = require(services.WeaponService)
 local StoreService        = require(services.StoreService)
+local SellService         = require(services.SellService)
 
 DataService:init()          -- ← primeiro: registra PlayerAdded antes de todos os outros
 PhysicsService:init()       -- ← grupos precisam existir antes de qualquer spawn
@@ -24,3 +25,4 @@ LeaderboardService:init()   -- ← antes do WaveService (WaveService depende del
 WaveService:init()          -- ← inicia EnemyService + agenda Wave 1
 WeaponService:init()
 StoreService:init()
+SellService:init()         -- ← após InventoryService e CurrencyService
