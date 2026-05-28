@@ -15,19 +15,14 @@ local WaveService = {}
 
 local BETWEEN_WAVES = 5
 
--- ── Estado ─────────────────────────────────────────────────────────────────
-
-local currentPhase      = "BuildPhase"
-local currentWave       = 0
-local currentWaveReward = 0
-local totalSpawned      = 0
-local totalRemoved      = 0
-local waveInProgress    = false
-local gameEnded         = false
-local waveRunId         = 0
-
--- Plots que foram derrotados nesta sessão de combate
-local defeatedPlots: { [any]: true } = {}
+-- ── Estado por plot ─────────────────────────────────────────────────────────
+-- plotStates[plot] = {
+--   phase: "BuildPhase" | "CombatPhase",
+--   wave, reward, spawned, removed: number,
+--   inProgress, ended: boolean,
+--   runId: number,
+-- }
+local plotStates: { [any]: any } = {}
 
 -- ── Geração procedural de waves ────────────────────────────────────────────
 
@@ -74,171 +69,150 @@ local function generateWave(waveNumber: number)
 	return { reward = reward, isBossWave = isBossWave, groups = groups }
 end
 
--- ── Helpers ─────────────────────────────────────────────────────────────────
+-- ── Helpers ──────────────────────────────────────────────────────────────────
 
-local function broadcast(data)
-	Remotes.WaveUpdate:FireAllClients(data)
+local function getPlayer(plot)
+	local uid = PlotService:getOwnerUserId(plot)
+	return uid and Players:GetPlayerByUserId(uid)
 end
 
-local function broadcastPhase(phase: string, immediate: boolean?)
-	Remotes.PhaseChanged:FireAllClients({ phase = phase, immediate = immediate == true })
+local function sendTo(plot, data)
+	local player = getPlayer(plot)
+	if player then Remotes.WaveUpdate:FireClient(player, data) end
 end
 
-local function rewardAll(amount)
-	for _, player in ipairs(Players:GetPlayers()) do
-		CurrencyService:addMoney(player, amount)
+local function sendPhaseTo(plot, phase: string, immediate: boolean?)
+	local player = getPlayer(plot)
+	if player then
+		Remotes.PhaseChanged:FireClient(player, { phase = phase, immediate = immediate == true })
 	end
 end
 
-local function resetRoundState()
-	currentWave       = 0
-	currentWaveReward = 0
-	totalSpawned      = 0
-	totalRemoved      = 0
-	waveInProgress    = false
-	gameEnded         = false
-	defeatedPlots     = {}
+local function newState()
+	return {
+		phase      = "BuildPhase",
+		wave       = 0,
+		reward     = 0,
+		spawned    = 0,
+		removed    = 0,
+		inProgress = false,
+		ended      = false,
+		runId      = 0,
+	}
 end
 
-local function doShutdown(immediate: boolean)
-	waveRunId += 1
-	defeatedPlots = {}
-	EnemyService:clearAllEnemies()
-	PlacementService:restoreSnapshot()
-	EnemyService:resetBases()
-	currentPhase = "BuildPhase"
-	broadcastPhase("BuildPhase", immediate)
-	print(("[WaveService] Shutdown completo (immediate=%s). BuildPhase ativa."):format(tostring(immediate)))
+local function ensureState(plot)
+	if not plotStates[plot] then
+		plotStates[plot] = newState()
+	end
+	return plotStates[plot]
 end
 
--- ── Derrota por plot ────────────────────────────────────────────────────────
+-- ── Derrota de plot ──────────────────────────────────────────────────────────
 
--- Chamado pelo EnemyService quando a base de um plot chega a 0.
 local function onPlotDefeated(plot)
-	if defeatedPlots[plot] then return end
-	defeatedPlots[plot] = true
+	local state = plotStates[plot]
+	if not state or state.ended then return end
+	state.ended      = true
+	state.inProgress = false
 
-	local userId = PlotService:getOwnerUserId(plot)
-	local player = userId and Players:GetPlayerByUserId(userId)
+	local player = getPlayer(plot)
+	if player then
+		PlacementService:destroyTowersForPlayer(player.UserId)
+		Remotes.PlayerDefeated:FireClient(player, { wave = state.wave })
+		LeaderboardService:recordWave(player, state.wave)
+		print(("[WaveService] '%s' derrotado na wave %d"):format(player.Name, state.wave))
+	end
+end
+
+-- ── Inimigo removido ─────────────────────────────────────────────────────────
+
+local function onEnemyRemoved(plot)
+	local state = plotStates[plot]
+	if not state or state.ended then return end
+	state.removed += 1
+	if not state.inProgress then return end
+	if state.removed < state.spawned then return end
+
+	state.inProgress = false
+	local player = getPlayer(plot)
+	print(("[WaveService] Plot '%s' Wave %d concluída! +$%d"):format(
+		plot.Name, state.wave, state.reward))
 
 	if player then
-		-- Destrói as torres do jogador derrotado
-		PlacementService:destroyTowersForPlayer(userId)
-
-		-- Notifica o cliente para exibir GameEndFrame
-		Remotes.PlayerDefeated:FireClient(player, { wave = currentWave })
-
-		-- Salva o recorde de ondas
-		LeaderboardService:recordWave(player, currentWave)
-
-		print(("[WaveService] '%s' derrotado na wave %d"):format(player.Name, currentWave))
+		CurrencyService:addMoney(player, state.reward)
+		LeaderboardService:recordWave(player, state.wave)
 	end
 
-	-- Verifica se TODOS os plots ativos foram derrotados → game over global
-	local activePlots = PlotService:getActivePlots()
-	for _, p in ipairs(activePlots) do
-		if not defeatedPlots[p] then return end   -- ainda há sobreviventes
-	end
+	sendTo(plot, { type = "ended", wave = state.wave, countdown = BETWEEN_WAVES })
 
-	-- Nenhum plot sobrevivente → encerra o jogo
-	if not gameEnded then
-		gameEnded      = true
-		waveInProgress = false
-		broadcast({ type = "gameover", wave = currentWave })
-		print("[WaveService] GAME OVER — todos os plots derrotados.")
-		task.delay(0.5, function()
-			resetRoundState()
-			doShutdown(false)
-		end)
-	end
+	local capturedRunId = state.runId
+	task.delay(BETWEEN_WAVES, function()
+		if state.runId ~= capturedRunId or state.ended then return end
+		WaveService:startWaveForPlot(plot, state.wave + 1)
+	end)
 end
 
--- ── Callbacks para EnemyService ────────────────────────────────────────────
+-- ── Shutdown por plot ────────────────────────────────────────────────────────
 
-local function onEnemyRemoved()
-	if gameEnded then return end
-	totalRemoved += 1
-	if not waveInProgress then return end
-	if totalRemoved < totalSpawned then return end
-
-	waveInProgress = false
-	print(("[WaveService] Wave %d concluída! +$%d"):format(currentWave, currentWaveReward))
-	rewardAll(currentWaveReward)
-
-	-- Salva recorde para jogadores ainda vivos
-	for _, player in ipairs(Players:GetPlayers()) do
-		local plot = PlotService:getPlot(player)
-		if plot and not defeatedPlots[plot] then
-			LeaderboardService:recordWave(player, currentWave)
-		end
-	end
-
-	broadcast({ type = "ended", wave = currentWave, countdown = BETWEEN_WAVES })
-	local capturedId = waveRunId
-	task.delay(BETWEEN_WAVES, function()
-		if waveRunId ~= capturedId then return end
-		if not gameEnded then
-			WaveService:startWave(currentWave + 1)
-		end
-	end)
+local function shutdownPlot(plot, immediate: boolean?)
+	local state = plotStates[plot]
+	if not state then return end
+	state.runId     += 1
+	state.inProgress = false
+	state.ended      = false
+	state.wave       = 0
+	state.spawned    = 0
+	state.removed    = 0
+	EnemyService:resetForPlot(plot)
+	local player = getPlayer(plot)
+	if player then PlacementService:restoreSnapshot(player.UserId) end
+	state.phase = "BuildPhase"
+	sendPhaseTo(plot, "BuildPhase", immediate)
+	print(("[WaveService] Plot '%s' BuildPhase restaurada."):format(plot.Name))
 end
 
 -- ── API pública ────────────────────────────────────────────────────────────
 
-function WaveService:getPhase()
-	return currentPhase
+function WaveService:getPhase(player: Player?)
+	if not player then return "BuildPhase" end
+	local plot = PlotService:getPlot(player)
+	if not plot then return "BuildPhase" end
+	local state = plotStates[plot]
+	return state and state.phase or "BuildPhase"
 end
 
-function WaveService:startWave(waveNumber: number)
-	if gameEnded then return end
+function WaveService:startWaveForPlot(plot, waveNumber: number)
+	local state = plotStates[plot]
+	if not state or state.ended then return end
 
-	waveRunId += 1
-	local myRunId = waveRunId
+	state.runId += 1
+	local myRunId = state.runId
 
-	local waveData = generateWave(waveNumber)
-	local plots    = PlotService:getActivePlots()
-
-	-- Conta apenas plots ainda vivos para este spawn
-	local alivePlots = {}
-	for _, plot in ipairs(plots) do
-		if not defeatedPlots[plot] then
-			table.insert(alivePlots, plot)
-		end
-	end
-	local numPlots = math.max(1, #alivePlots)
-
+	local waveData     = generateWave(waveNumber)
 	local totalToSpawn = 0
 	for _, group in ipairs(waveData.groups) do
-		totalToSpawn += group.count * numPlots
+		totalToSpawn += group.count
 	end
 
-	currentWave       = waveNumber
-	currentWaveReward = waveData.reward
-	totalSpawned      = totalToSpawn
-	totalRemoved      = 0
-	waveInProgress    = true
+	state.wave       = waveNumber
+	state.reward     = waveData.reward
+	state.spawned    = totalToSpawn
+	state.removed    = 0
+	state.inProgress = true
 
 	local label = waveData.isBossWave and " [BOSS]" or ""
-	broadcast({ type = "started", wave = currentWave, isBoss = waveData.isBossWave })
-	print(("[WaveService] === Wave %d%s | %d plot(s) vivo(s) | reward $%d ==="):format(
-		currentWave, label, numPlots, currentWaveReward))
+	sendTo(plot, { type = "started", wave = waveNumber, isBoss = waveData.isBossWave })
+	print(("[WaveService] Plot '%s' === Wave %d%s | reward $%d ==="):format(
+		plot.Name, waveNumber, label, waveData.reward))
 
 	task.spawn(function()
 		for _, group in ipairs(waveData.groups) do
 			for _ = 1, group.count do
-				if waveRunId ~= myRunId then return end
-				for _, plot in ipairs(alivePlots) do
-					-- Snapshot de alivePlots capturado no início da wave;
-					-- plots derrotados mid-wave já foram contados mas não spawnam:
-					-- EnemyService.spawn retorna nil e o onRemovedCb nunca é chamado.
-					-- Compensamos decrementando totalSpawned aqui.
-					if defeatedPlots[plot] then
-						totalSpawned -= 1
-						continue
-					end
-					local enemy = EnemyService:spawn(group.enemy, plot, { hp = group.hp, speed = group.speed })
-					if not enemy then totalSpawned -= 1 end
-				end
+				if state.runId ~= myRunId then return end
+				if state.ended then return end
+				local enemy = EnemyService:spawn(group.enemy, plot, { hp = group.hp, speed = group.speed })
+				if not enemy then state.spawned -= 1 end
 				if group.interval > 0 then task.wait(group.interval) end
 			end
 		end
@@ -248,41 +222,67 @@ end
 function WaveService:init()
 	EnemyService:init(onEnemyRemoved)
 	EnemyService:setPlotDefeatedCallback(onPlotDefeated)
-	PlacementService:setPhaseProvider(function() return currentPhase end)
+	PlacementService:setPhaseProvider(function(player) return WaveService:getPhase(player) end)
 
-	broadcastPhase("BuildPhase", true)
-	broadcast({ type = "buildphase" })
-	print("[WaveService] BuildPhase inicial. Aguardando RequestWaveStart...")
+	-- Inicializa estado para jogadores já conectados (teste Studio)
+	for _, player in ipairs(Players:GetPlayers()) do
+		local plot = PlotService:getPlot(player)
+		if plot then
+			local state = ensureState(plot)
+			sendPhaseTo(plot, state.phase, true)
+		end
+	end
 
-	Remotes.RequestWaveStart.OnServerEvent:Connect(function(_player)
-		if currentPhase ~= "BuildPhase" then return end
+	-- Inicializa estado para jogadores que entrarem depois
+	Players.PlayerAdded:Connect(function(player)
+		local plot = PlotService:getPlot(player)
+		if plot then
+			local state = ensureState(plot)
+			sendPhaseTo(plot, state.phase, true)
+		end
+	end)
 
-		PlacementService:saveSnapshot()
-		EnemyService:reset()
-		currentPhase = "CombatPhase"
-		resetRoundState()
+	Remotes.RequestWaveStart.OnServerEvent:Connect(function(player)
+		local plot = PlotService:getPlot(player)
+		if not plot then return end
 
-		broadcastPhase("CombatPhase")
-		broadcast({ type = "combatstart" })
-		print("[WaveService] CombatPhase iniciada. Wave 1 em 3s...")
+		local state = ensureState(plot)
+		if state.phase ~= "BuildPhase" then return end
 
-		local capturedId = waveRunId
+		PlacementService:saveSnapshot(player.UserId)
+		EnemyService:resetForPlot(plot)
+		state.phase      = "CombatPhase"
+		state.ended      = false
+		state.wave       = 0
+		state.runId     += 1
+
+		sendPhaseTo(plot, "CombatPhase")
+		sendTo(plot, { type = "combatstart" })
+		print(("[WaveService] Plot '%s' CombatPhase por '%s'. Wave 1 em 3s..."):format(
+			plot.Name, player.Name))
+
+		local capturedRunId = state.runId
 		task.delay(3, function()
-			if waveRunId ~= capturedId then return end
-			WaveService:startWave(1)
+			if state.runId ~= capturedRunId then return end
+			WaveService:startWaveForPlot(plot, 1)
 		end)
 	end)
 
-	Remotes.RequestWaveEnd.OnServerEvent:Connect(function(_player)
-		if currentPhase ~= "CombatPhase" then return end
+	Remotes.RequestWaveEnd.OnServerEvent:Connect(function(player)
+		local plot = PlotService:getPlot(player)
+		if not plot then return end
 
-		gameEnded      = true
-		waveInProgress = false
-		broadcast({ type = "waveend", wave = currentWave })
-		print("[WaveService] Desistência manual. Encerrando combate...")
-		resetRoundState()
-		doShutdown(true)
+		local state = plotStates[plot]
+		if not state or state.phase ~= "CombatPhase" then return end
+
+		state.inProgress = false
+		sendTo(plot, { type = "waveend", wave = state.wave })
+		print(("[WaveService] Plot '%s' desistência manual por '%s'."):format(
+			plot.Name, player.Name))
+		shutdownPlot(plot, true)
 	end)
+
+	print("[WaveService] Iniciado. Aguardando RequestWaveStart por plot...")
 end
 
 return WaveService

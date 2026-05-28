@@ -80,7 +80,7 @@ function EnemyService:_onPlotDefeated(plot)
 		if info.plot == plot then
 			activeEnemies[model] = nil
 			info.obj:destroy()
-			if onRemovedCb then onRemovedCb() end
+			if onRemovedCb then onRemovedCb(plot) end
 		end
 	end
 
@@ -108,7 +108,7 @@ function EnemyService:init(onRemovedCallback)
 			if info.obj._dead then
 				activeEnemies[model] = nil
 				info.obj:destroy()
-				if onRemovedCb then onRemovedCb() end
+				if onRemovedCb then onRemovedCb(info.plot) end
 				continue
 			end
 
@@ -117,7 +117,7 @@ function EnemyService:init(onRemovedCallback)
 			if defeatedPlots[info.plot] then continue end
 
 			local pData        = plotData[info.plot]
-			local activeTowers = _towerProvider and _towerProvider() or nil
+			local activeTowers = _towerProvider and _towerProvider(info.plot) or nil
 			local gameOver     = info.obj:update(
 				dt,
 				pData and pData.waypoints or {},
@@ -207,6 +207,25 @@ function EnemyService:clearAllEnemies()
 	activeEnemies = {}
 end
 
+function EnemyService:clearEnemiesForPlot(targetPlot)
+	for model, info in pairs(activeEnemies) do
+		if info.plot == targetPlot then
+			activeEnemies[model] = nil
+			info.obj:destroy()
+		end
+	end
+end
+
+function EnemyService:resetForPlot(plot)
+	defeatedPlots[plot] = nil
+	self:clearEnemiesForPlot(plot)
+	local pData = plotData[plot]
+	if pData and pData.base then
+		local hp = pData.base:FindFirstChild("HP")
+		if hp then (hp :: IntValue).Value = pData.initialBaseHP end
+	end
+end
+
 function EnemyService:resetBases()
 	for _, pData in pairs(plotData) do
 		local base = pData.base
@@ -226,6 +245,14 @@ function EnemyService:getActive()
 	local out = {}
 	for model, info in pairs(activeEnemies) do
 		out[model] = info.obj
+	end
+	return out
+end
+
+function EnemyService:getActiveForPlot(plot)
+	local out = {}
+	for model, info in pairs(activeEnemies) do
+		if info.plot == plot then out[model] = info.obj end
 	end
 	return out
 end

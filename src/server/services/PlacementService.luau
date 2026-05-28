@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
+local Players           = game:GetService("Players")
 
 local Shared          = ReplicatedStorage:WaitForChild("Shared")
 local TowerStats      = require(Shared.configs.TowerStats)
@@ -15,7 +16,7 @@ local PlacementService = {}
 -- Torres em ReplicatedStorage para que o cliente possa clonar o preview 3D
 local towersFolder   = nil
 local placedTowers   = {}  -- { [model] = { owner = userId, towerName = string, level = number, quad = BasePart } }
-local savedSnapshot  = {}  -- { { towerName, level, cframe, ownerUserId, quad } }
+local savedSnapshots = {}  -- { [ownerUserId] = { { towerName, level, cframe, ownerUserId, quad } } }
 local _phaseProvider = nil
 
 -- ── Helpers ────────────────────────────────────────────────────────────────
@@ -51,13 +52,15 @@ local function spawnTower(clone, towerName, cframe, ownerUserId, level, quad)
 	clone.Destroying:Connect(function() placedTowers[clone] = nil end)
 
 	if quad then quad:SetAttribute("Ocupado", true) end
-	TowerService:registerTower(clone, towerName, level)
+	local player = Players:GetPlayerByUserId(ownerUserId)
+	local plot   = player and PlotService:getPlot(player) or nil
+	TowerService:registerTower(clone, towerName, level, plot)
 end
 
 -- ── Placement ──────────────────────────────────────────────────────────────
 
 local function tryPlace(player, towerName, quad): boolean
-	if _phaseProvider and _phaseProvider() ~= "BuildPhase" then
+	if _phaseProvider and _phaseProvider(player) ~= "BuildPhase" then
 		warn_("'%s' tentou construir durante CombatPhase", player.Name)
 		return false
 	end
@@ -112,7 +115,7 @@ end
 -- ── Ação na torre (Upgrade / Sell) ─────────────────────────────────────────
 
 local function handleTowerAction(player: Player, tower: Model, action: string): boolean
-	if _phaseProvider and _phaseProvider() ~= "BuildPhase" then
+	if _phaseProvider and _phaseProvider(player) ~= "BuildPhase" then
 		warn_("'%s' tentou '%s' durante CombatPhase", player.Name, action)
 		return false
 	end
@@ -184,11 +187,11 @@ end
 
 -- ── Snapshot ───────────────────────────────────────────────────────────────
 
-function PlacementService:saveSnapshot()
-	savedSnapshot = {}
+function PlacementService:saveSnapshot(ownerUserId: number)
+	savedSnapshots[ownerUserId] = {}
 	for model, info in pairs(placedTowers) do
-		if model.Parent then
-			table.insert(savedSnapshot, {
+		if model.Parent and info.owner == ownerUserId then
+			table.insert(savedSnapshots[ownerUserId], {
 				towerName   = info.towerName,
 				level       = info.level or 1,
 				cframe      = model:GetPivot(),
@@ -197,36 +200,36 @@ function PlacementService:saveSnapshot()
 			})
 		end
 	end
-	log("Snapshot salvo: %d torre(s)", #savedSnapshot)
+	log("Snapshot salvo para userId %d: %d torre(s)", ownerUserId, #savedSnapshots[ownerUserId])
 end
 
-function PlacementService:restoreSnapshot()
-	-- Libera os quads das torres atuais antes de destruí-las
-	for _, info in pairs(placedTowers) do
-		if info.quad then info.quad:SetAttribute("Ocupado", false) end
-	end
+function PlacementService:restoreSnapshot(ownerUserId: number)
+	local snapshot = savedSnapshots[ownerUserId] or {}
 
 	local toDestroy = {}
-	for model in pairs(placedTowers) do
-		table.insert(toDestroy, model)
+	for model, info in pairs(placedTowers) do
+		if info.owner == ownerUserId then
+			table.insert(toDestroy, model)
+		end
 	end
-	placedTowers = {}
-
 	for _, model in ipairs(toDestroy) do
+		local info = placedTowers[model]
 		TowerService:unregisterTower(model)
+		if info and info.quad then info.quad:SetAttribute("Ocupado", false) end
+		placedTowers[model] = nil
 		if model.Parent then model:Destroy() end
 	end
 
 	if not towersFolder then return end
 
-	for _, data in ipairs(savedSnapshot) do
+	for _, data in ipairs(snapshot) do
 		local template = towersFolder:FindFirstChild(data.towerName)
 		if not template then continue end
 		local clone = template:Clone()
 		spawnTower(clone, data.towerName, data.cframe, data.ownerUserId, data.level, data.quad)
 	end
 
-	log("Snapshot restaurado: %d torre(s)", #savedSnapshot)
+	log("Snapshot restaurado para userId %d: %d torre(s)", ownerUserId, #snapshot)
 end
 
 -- ── Remoção por dono ───────────────────────────────────────────────────────
