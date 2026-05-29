@@ -98,6 +98,10 @@ function PlotService:init()
 
 	print(("[PlotService] %d plot(s) carregado(s)"):format(#availablePlots))
 
+	Remotes.GetMyPlot.OnServerInvoke = function(player)
+		return self:getPlot(player)
+	end
+
 	Players.PlayerAdded:Connect(function(player)
 		self:claimPlot(player)
 	end)

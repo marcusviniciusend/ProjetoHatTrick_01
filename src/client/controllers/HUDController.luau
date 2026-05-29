@@ -14,6 +14,35 @@ local gameEndFrame, titleLabel, subLabel, restartButton
 local startWaveButton, endWaveButton
 local countdownThread = nil
 
+-- Plot atribuído ao jogador local (preenchido pelo PlotAssigned event)
+local myPlot = nil
+
+-- ── Helpers de teleporte ───────────────────────────────────────────────────
+
+-- Espelha getPlotSpawnCFrame do servidor para encontrar o ponto exato de spawn do plot
+local function getPlotSpawnCFrame(plot): CFrame
+	local spawnPart = plot:FindFirstChild("SpawnPoint", true)
+	if spawnPart and spawnPart:IsA("BasePart") then
+		return spawnPart.CFrame
+	end
+	if plot:IsA("Model") then
+		local cf = plot:GetBoundingBox()
+		return cf
+	end
+	if plot:IsA("BasePart") then
+		return plot.CFrame
+	end
+	return CFrame.new(0, 0, 0)
+end
+
+local function teleportCharacter(targetCF: CFrame, yOffset: number)
+	local character = player.Character
+	if not character then return end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	hrp.CFrame = targetCF + Vector3.new(0, yOffset, 0)
+end
+
 -- ── Countdown ──────────────────────────────────────────────────────────────
 
 local function stopCountdown()
@@ -98,25 +127,33 @@ end
 
 -- ── HP da base do próprio plot ─────────────────────────────────────────────
 
--- Aguarda o servidor atribuir o plot e então encontra a Base dentro dele.
-local function watchPlotBase()
-	local assignedPlot = nil
-
-	Remotes.PlotAssigned.OnClientEvent:Connect(function(plot)
-		assignedPlot = plot
-		local base = plot:FindFirstChild("Base")
-		local hp   = base and base:FindFirstChild("HP")
-
-		if hp then
+local function applyPlotHp(plot)
+	myPlot = plot
+	local base = plot:FindFirstChild("Base")
+	local hp   = base and base:FindFirstChild("HP")
+	if hp then
+		if baseHPLabel then baseHPLabel.Text = ("Base: %d"):format(hp.Value) end
+		hp:GetPropertyChangedSignal("Value"):Connect(function()
 			if baseHPLabel then baseHPLabel.Text = ("Base: %d"):format(hp.Value) end
-			hp:GetPropertyChangedSignal("Value"):Connect(function()
-				if baseHPLabel then baseHPLabel.Text = ("Base: %d"):format(hp.Value) end
-			end)
-		else
-			if baseHPLabel then baseHPLabel.Text = "Base: --" end
-			warn("[HUDController] Base ou Base.HP não encontrado no plot atribuído")
-		end
-	end)
+		end)
+	else
+		if baseHPLabel then baseHPLabel.Text = "Base: --" end
+		warn("[HUDController] Base ou Base.HP não encontrado no plot atribuído")
+	end
+end
+
+-- initialPlot: se fornecido, aplica o watcher imediatamente (resolve race condition
+-- em que PlotAssigned já disparou antes do cliente terminar de carregar).
+-- Idempotente: múltiplos calls reaproveitam o mesmo listener do evento.
+local plotListenerUp = false
+local function watchPlotBase(initialPlot)
+	if not plotListenerUp then
+		plotListenerUp = true
+		Remotes.PlotAssigned.OnClientEvent:Connect(applyPlotHp)
+	end
+	if initialPlot then
+		applyPlotHp(initialPlot)
+	end
 end
 
 -- ── Init ───────────────────────────────────────────────────────────────────
@@ -142,6 +179,39 @@ function HUDController:init()
 	if not (waveLabel and waveStatusLabel and baseHPLabel and moneyLabel) then
 		warn("[HUDController] Label(s) não encontrado(s) no Frame")
 		return
+	end
+
+	-- ── Botão de teleporte para o plot ────────────────────────────────────────
+	local plotButton = frame:WaitForChild("PlotButton", 5)
+	if plotButton then
+		plotButton.MouseButton1Click:Connect(function()
+			if not myPlot then
+				warn("[HUDController] PlotButton clicado mas plot ainda não atribuído")
+				return
+			end
+			teleportCharacter(getPlotSpawnCFrame(myPlot), 5)
+		end)
+	else
+		warn("[HUDController] PlotButton não encontrado no Frame")
+	end
+
+	-- ── Botão de teleporte para a loja ────────────────────────────────────────
+	local storeButton = frame:WaitForChild("StoreButton", 5)
+	if storeButton then
+		storeButton.MouseButton1Click:Connect(function()
+			local storeTp = Workspace:FindFirstChild("StoreTp", true)
+			if not storeTp then
+				warn("[HUDController] StoreTp não encontrado no Workspace")
+				return
+			end
+			local targetCF = storeTp:IsA("BasePart") and storeTp.CFrame
+				or (storeTp:IsA("Model") and storeTp:GetPivot())
+			if targetCF then
+				teleportCharacter(targetCF, 3)
+			end
+		end)
+	else
+		warn("[HUDController] StoreButton não encontrado no Frame")
 	end
 
 	gameEndFrame = hudUI:WaitForChild("GameEndFrame", 5)
@@ -187,8 +257,17 @@ function HUDController:init()
 	baseHPLabel.Text     = "Base: --"
 	moneyLabel.Text      = "$--"
 
-	-- HP da base: aguarda o plot ser atribuído pelo servidor
+	-- Configura listener imediatamente (antes de qualquer yield) para não perder PlotAssigned
 	watchPlotBase()
+
+	-- Busca o estado atual em background; se PlotAssigned já disparou antes do cliente
+	-- carregar, watchPlotBase(plot) aplica applyPlotHp diretamente sem esperar o evento
+	task.spawn(function()
+		local plot = Remotes.GetMyPlot:InvokeServer()
+		if plot and not myPlot then
+			watchPlotBase(plot)
+		end
+	end)
 
 	-- Dinheiro via leaderstats
 	task.spawn(function()

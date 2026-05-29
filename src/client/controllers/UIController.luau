@@ -137,6 +137,15 @@ local function createCard(towerName: string, count: number)
     card.Name = towerName
     card.Visible = true
 
+    -- Limpa TextLabels não mapeados pelo sistema para evitar que placeholders do
+    -- template (ex: "Label", "TextLabel") vazem na tela do jogador
+    local MAPPED_LABELS = { Name = true, Qtd = true }
+    for _, child in ipairs(card:GetDescendants()) do
+        if child:IsA("TextLabel") and not MAPPED_LABELS[child.Name] then
+            child.Text = ""
+        end
+    end
+
     local nameLabel = card:FindFirstChild("Name")
     local qtdLabel  = card:FindFirstChild("Qtd")
     if nameLabel then nameLabel.Text = towerName end
@@ -218,16 +227,50 @@ end
 
 -- ── Tower Info Panel (Upgrade/Sell) ─────────────────────────────────────────
 
-local towerInfoPanel = nil
-local nameLabel      = nil
-local statsLabel     = nil
-local nextStatsLabel = nil
-local upgradeButton  = nil
-local sellButton     = nil
-local closeButton    = nil
-local currentTower   = nil
+local towerInfoPanel            = nil
+local upgradeButton             = nil
+local sellButton                = nil
+local closeButton               = nil
+local currentTower              = nil
+local towerInfoButtonsConnected = false
+
+-- Conecta os botões do painel uma única vez. Chamado em init (se o painel existe)
+-- ou de forma lazy em showTowerInfo (se o painel foi adicionado depois).
+local function connectTowerInfoButtons()
+    if towerInfoButtonsConnected or not towerInfoPanel then return end
+    towerInfoButtonsConnected = true
+
+    upgradeButton = towerInfoPanel:FindFirstChild("UpgradeButton", true)
+    sellButton    = towerInfoPanel:FindFirstChild("SellButton",    true)
+    closeButton   = towerInfoPanel:FindFirstChild("CloseButton",   true)
+
+    if upgradeButton then
+        upgradeButton.MouseButton1Click:Connect(function()
+            if not currentTower then return end
+            local ok = Remotes.RequestTowerAction:InvokeServer(currentTower, "Upgrade")
+            if not ok then warn(PREFIX .. "Upgrade negado") end
+        end)
+    end
+    if sellButton then
+        sellButton.MouseButton1Click:Connect(function()
+            if not currentTower then return end
+            local ok = Remotes.RequestTowerAction:InvokeServer(currentTower, "Sell")
+            if ok then UIController:hideTowerInfo() end
+        end)
+    end
+    if closeButton then
+        closeButton.MouseButton1Click:Connect(function()
+            UIController:hideTowerInfo()
+            require(script.Parent.TowerController):hideRange()
+        end)
+    end
+end
 
 function UIController:refreshTowerInfo()
+    -- Busca lazy: painel pode ter sido adicionado após o init
+    if not towerInfoPanel then
+        towerInfoPanel = gui:FindFirstChild("TowerInfoPanel", true)
+    end
     if not currentTower or not towerInfoPanel then return end
 
     local nameVal   = currentTower:FindFirstChild("TowerName")
@@ -241,9 +284,17 @@ function UIController:refreshTowerInfo()
     local curStats = data.Levels[level]
     local nxtStats = data.Levels[level + 1]
 
-    if nameLabel then nameLabel.Text = ("%s  —  Lv.%d"):format(towerName, level) end
+    -- FindFirstChild direto no painel: funciona mesmo que o painel tenha sido
+    -- adicionado depois do init (vars de módulo não foram populadas nesse caso)
+    local nl  = towerInfoPanel:FindFirstChild("NameLabel",      true)
+    local sl  = towerInfoPanel:FindFirstChild("StatsLabel",     true)
+    local nsl = towerInfoPanel:FindFirstChild("NextStatsLabel", true)
+    local ub  = towerInfoPanel:FindFirstChild("UpgradeButton",  true)
+    local sb  = towerInfoPanel:FindFirstChild("SellButton",     true)
 
-    if statsLabel then
+    if nl then nl.Text = ("%s  —  Lv.%d"):format(towerName, level) end
+
+    if sl then
         local danoAtual  = curStats and curStats.Damage   or 0
         local rangeAtual = curStats and curStats.Range    or 0
         local cdAtual    = curStats and curStats.Cooldown or 0
@@ -255,36 +306,47 @@ function UIController:refreshTowerInfo()
         if danoAtual  > 0 then table.insert(lines, ("Dano: %d > %d"):format(danoAtual, danoProx))      end
         if rangeAtual > 0 then table.insert(lines, ("Alcance: %d > %d"):format(rangeAtual, rangeProx)) end
         if cdAtual    > 0 then table.insert(lines, ("CD: %.2fs > %.2fs"):format(cdAtual, cdProx))      end
-        statsLabel.Text = #lines > 0 and table.concat(lines, "\n") or "Passiva"
+        sl.Text = #lines > 0 and table.concat(lines, "\n") or "Passiva"
     end
 
-    if nextStatsLabel then
-        nextStatsLabel.Text = nxtStats and "" or "Nível máximo"
-    end
+    if nsl then nsl.Text = nxtStats and "" or "Nível máximo" end
 
-    if upgradeButton then
+    if ub then
         local cost = nxtStats and nxtStats.UpgradeCost
         if cost and cost > 0 then
-            upgradeButton.Visible = true
-            upgradeButton.Text    = ("Upgrade  $%d"):format(cost)
+            ub.Visible = true
+            ub.Text    = ("Upgrade  $%d"):format(cost)
             local money     = player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("Money")
             local canAfford = money and money.Value >= cost
-            upgradeButton.AutoButtonColor  = canAfford == true
-            upgradeButton.TextTransparency = canAfford and 0 or 0.4
+            ub.AutoButtonColor  = canAfford == true
+            ub.TextTransparency = canAfford and 0 or 0.4
         else
-            upgradeButton.Visible = false
+            ub.Visible = false
         end
     end
 
-    if sellButton then
+    if sb then
         local refund = data.BasePrice and math.floor(data.BasePrice * 0.5) or 0
-        sellButton.Text = ("Vender  +$%d"):format(refund)
+        sb.Text = ("Vender  +$%d"):format(refund)
     end
 end
 
 function UIController:showTowerInfo(tower: Model)
+    -- Busca lazy: conecta botões se painel foi adicionado após o init
+    if not towerInfoPanel then
+        towerInfoPanel = gui:FindFirstChild("TowerInfoPanel", true)
+        if towerInfoPanel then
+            towerInfoPanel.Visible = false
+            connectTowerInfoButtons()
+        end
+    end
+    if not towerInfoPanel then
+        warn(PREFIX .. "TowerInfoPanel não encontrado — torre clicada mas painel ainda não existe no StarterGui")
+        return
+    end
+
     currentTower = tower
-    if towerInfoPanel then towerInfoPanel.Visible = true end
+    towerInfoPanel.Visible = true
     self:refreshTowerInfo()
 
     local lvlVal = tower:FindFirstChild("Level")
@@ -377,39 +439,14 @@ function UIController:init()
         end)
     end
 
-    -- Tower Info Panel
+    -- Tower Info Panel: se existir agora conecta botões; caso contrário, showTowerInfo
+    -- fará a busca lazy quando o jogador clicar na primeira torre
     towerInfoPanel = gui:FindFirstChild("TowerInfoPanel", true)
     if towerInfoPanel then
         towerInfoPanel.Visible = false
-        nameLabel      = towerInfoPanel:FindFirstChild("NameLabel",      true)
-        statsLabel     = towerInfoPanel:FindFirstChild("StatsLabel",     true)
-        nextStatsLabel = towerInfoPanel:FindFirstChild("NextStatsLabel", true)
-        upgradeButton  = towerInfoPanel:FindFirstChild("UpgradeButton",  true)
-        sellButton     = towerInfoPanel:FindFirstChild("SellButton",     true)
-        closeButton    = towerInfoPanel:FindFirstChild("CloseButton",    true)
-
-        if upgradeButton then
-            upgradeButton.MouseButton1Click:Connect(function()
-                if not currentTower then return end
-                local ok = Remotes.RequestTowerAction:InvokeServer(currentTower, "Upgrade")
-                if not ok then warn(PREFIX .. "Upgrade negado") end
-            end)
-        end
-        if sellButton then
-            sellButton.MouseButton1Click:Connect(function()
-                if not currentTower then return end
-                local ok = Remotes.RequestTowerAction:InvokeServer(currentTower, "Sell")
-                if ok then self:hideTowerInfo() end
-            end)
-        end
-        if closeButton then
-            closeButton.MouseButton1Click:Connect(function()
-                self:hideTowerInfo()
-                require(script.Parent.TowerController):hideRange()
-            end)
-        end
+        connectTowerInfoButtons()
     else
-        warn(PREFIX .. "TowerInfoPanel não encontrado (Ignorar se ainda não criou)")
+        warn(PREFIX .. "TowerInfoPanel não encontrado — será buscado ao clicar numa torre")
     end
 
     -- Inputs (Teclado)
