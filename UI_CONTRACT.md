@@ -186,7 +186,7 @@ ShopGui                       (ScreenGui)
 **Comportamento automático:**
 - Abre via `OpenShop` (RemoteEvent do servidor ao entrar na área)
 - Estoque e preços atualizados automaticamente via `ShopUpdated`
-- Torres exibidas nos pedestais 3D automaticamente (`Workspace > Hotspot > Pedestal1..5`)
+- Torres exibidas nos pedestais 3D automaticamente (`Workspace > TowerNPC > Pedestal1..5`)
 
 ---
 
@@ -288,7 +288,7 @@ Workspace
             ├─ 1              [BasePart]  — primeiro waypoint dos inimigos
             ├─ 2              [BasePart]
             └─ ...            (sequencial, sem pular números)
-└─ Hotspot                    [Model]     — área da loja de torres
+└─ TowerNPC                   [Model]     — área da loja de torres
    ├─ PrimaryPart             [BasePart]  — âncora do relógio de rotação
    ├─ Pedestal1               [BasePart/Model] — vitrine da torre 1
    ├─ Pedestal2               ...
