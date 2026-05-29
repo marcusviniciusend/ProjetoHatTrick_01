@@ -18,7 +18,11 @@ local DATA_TEMPLATE = {
 	},
 	Inventory = {
 		Towers = {},    -- Ex: {"cannon", "archer_tower"}
-		Brainrots = {}  -- Ex: {"jl din din din", "dung dung bumbum"}
+		Brainrots = {}, -- Ex: {"jl din din din", "dung dung bumbum"}
+		Weapons = {
+			Equipped  = nil, -- string | nil
+			Inventory = {},  -- { string }
+		},
 	},
 	Stats = {
 		TimePlayed = 0

@@ -40,4 +40,16 @@ return {
 	TowerAttacked      = getRemote("TowerAttacked",      "RemoteEvent"),
 	RequestSellItem    = getRemote("RequestSellItem",    "RemoteFunction"),
 	GetMyPlot          = getRemote("GetMyPlot",          "RemoteFunction"),
+
+	-- Armas: Server → Client
+	WeaponEquipped         = getRemote("WeaponEquipped",         "RemoteEvent"),
+	WeaponInventoryUpdated = getRemote("WeaponInventoryUpdated", "RemoteEvent"),
+	WeaponDropped          = getRemote("WeaponDropped",          "RemoteEvent"),
+	OpenWeaponShop         = getRemote("OpenWeaponShop",         "RemoteEvent"),
+
+	-- Armas: Client → Server
+	GetEquippedWeapon  = getRemote("GetEquippedWeapon",  "RemoteFunction"),
+	GetWeaponInventory = getRemote("GetWeaponInventory", "RemoteFunction"),
+	BuyWeapon          = getRemote("BuyWeapon",          "RemoteFunction"),
+	WeaponEquip        = getRemote("WeaponEquip",        "RemoteFunction"),
 }
