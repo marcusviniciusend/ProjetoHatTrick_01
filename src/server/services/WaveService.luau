@@ -5,8 +5,9 @@ local Shared     = ReplicatedStorage:WaitForChild("Shared")
 local WaveConfig = require(Shared.configs.WaveData)
 local Remotes    = require(Shared.network.Remotes)
 
-local EnemyService        = require(script.Parent.EnemyService)
-local CurrencyService     = require(script.Parent.CurrencyService)
+local EnemyService           = require(script.Parent.EnemyService)
+local CurrencyService        = require(script.Parent.CurrencyService)
+local WeaponInventoryService = require(script.Parent.WeaponInventoryService)
 local PlacementService    = require(script.Parent.PlacementService)
 local PlotService         = require(script.Parent.PlotService)
 local LeaderboardService  = require(script.Parent.LeaderboardService)
@@ -14,6 +15,13 @@ local LeaderboardService  = require(script.Parent.LeaderboardService)
 local WaveService = {}
 
 local BETWEEN_WAVES = 5
+
+local BOSS_WEAPON_DROP: { [number]: string } = {
+	[100] = "Espada do Rei Bárbaro",
+	[200] = "Besta da Rainha",
+	[300] = "Cajado da Bruxa",
+	[400] = "Cajado da Bruxa Sombria",
+}
 
 -- ── Estado por plot ─────────────────────────────────────────────────────────
 -- plotStates[plot] = {
@@ -140,6 +148,15 @@ local function onEnemyRemoved(plot)
 		plot.Name, state.wave, state.reward))
 
 	if player then
+		-- Boss drop: state.ended ainda é false aqui, garantindo execução única por wave
+		local dropWeapon = state.isBossWave and BOSS_WEAPON_DROP[state.wave]
+		if dropWeapon then
+			WeaponInventoryService:giveWeapon(player, dropWeapon)
+			Remotes.WeaponDropped:FireClient(player, { weaponName = dropWeapon, wave = state.wave })
+			print(("[WaveService] Boss drop: '%s' recebeu '%s' (wave %d)"):format(
+				player.Name, dropWeapon, state.wave))
+		end
+
 		CurrencyService:addMoney(player, state.reward)
 		LeaderboardService:recordWave(player, state.wave)
 	end
@@ -197,6 +214,7 @@ function WaveService:startWaveForPlot(plot, waveNumber: number)
 
 	state.wave       = waveNumber
 	state.reward     = waveData.reward
+	state.isBossWave = waveData.isBossWave
 	state.spawned    = totalToSpawn
 	state.removed    = 0
 	state.inProgress = true
