@@ -27,6 +27,7 @@ local STATE = {
     InventoryOpen = "InventoryOpen",
     PlacingTower  = "PlacingTower",
     DeletingTower = "DeletingTower",
+    WeaponMode    = "WeaponMode",
 }
 
 local currentState = STATE.Idle
@@ -65,9 +66,13 @@ end
 function UIController:setState(newState: string)
     print(PREFIX .. "Tentando mudar de estado: " .. tostring(currentState) .. " -> " .. tostring(newState))
     
-    if phaseLocked and newState ~= STATE.Idle then 
+    if phaseLocked and newState ~= STATE.Idle and newState ~= STATE.WeaponMode then
         warn(PREFIX .. "Bloqueado! Fase de combate ativa.")
-        return 
+        return
+    end
+    if newState == STATE.WeaponMode and not phaseLocked then
+        warn(PREFIX .. "WeaponMode só disponível em CombatPhase.")
+        return
     end
     if newState == currentState then return end
     
@@ -104,6 +109,10 @@ function UIController:setState(newState: string)
         if towersGui then towersGui.Enabled = false end
         print(PREFIX .. "Modo de deletar ativado")
         PlacementController:setDeleteMode(true)
+        selectedTowerName = nil
+
+    elseif newState == STATE.WeaponMode then
+        if towersGui then towersGui.Enabled = false end
         selectedTowerName = nil
     end
 
@@ -394,6 +403,18 @@ function UIController:init()
                 self:setState(STATE.DeletingTower)
             end
         end)
+
+        local weaponBtn = hotbarMain:FindFirstChild("Weapon_btn")
+        if weaponBtn then
+            weaponBtn.MouseButton1Click:Connect(function()
+                print(PREFIX .. "Botão Weapon_btn clicado na UI")
+                if currentState == STATE.WeaponMode then
+                    self:setState(STATE.Idle)
+                else
+                    self:setState(STATE.WeaponMode)
+                end
+            end)
+        end
     else
         warn(PREFIX .. "HotbarGui NÃO encontrada!")
     end
@@ -466,6 +487,13 @@ function UIController:init()
                 self:setState(STATE.Idle)
             else
                 self:setState(STATE.DeletingTower)
+            end
+        elseif input.KeyCode == Enum.KeyCode.Three then
+            print(PREFIX .. "Tecla '3' pressionada. Estado atual: " .. currentState)
+            if currentState == STATE.WeaponMode then
+                self:setState(STATE.Idle)
+            else
+                self:setState(STATE.WeaponMode)
             end
         elseif input.KeyCode == Enum.KeyCode.Escape then
             print(PREFIX .. "Tecla 'Esc' pressionada.")
