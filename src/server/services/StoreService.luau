@@ -128,18 +128,18 @@ end
 
 -- ── ProximityPrompt da loja (servidor garante visibilidade para todos) ─────
 
-local function setupHotspotPrompt()
-    local hotspotModel = workspace:FindFirstChild("Hotspot")
-	
-    if not hotspotModel then
-        warn("[StoreService] Modelo 'Hotspot' não encontrado no Workspace.")
+local function setupTowerNPCPrompt()
+    local npc = workspace:FindFirstChild("TowerNPC")
+
+    if not npc then
+        warn("[StoreService] Modelo 'TowerNPC' não encontrado no Workspace.")
         return
     end
 
-    local prompt = hotspotModel:FindFirstChildWhichIsA("ProximityPrompt", true)
+    local prompt = npc:FindFirstChildWhichIsA("ProximityPrompt", true)
 
     if not prompt then
-        warn("[StoreService] ProximityPrompt não encontrado dentro do modelo 'Hotspot'.")
+        warn("[StoreService] ProximityPrompt não encontrado dentro do modelo 'TowerNPC'.")
         return
     end
 
@@ -162,7 +162,7 @@ function StoreService:init()
 	end)
 
 	Remotes.BuyShopItem.OnServerInvoke = handleBuy
-	task.spawn(setupHotspotPrompt)
+	task.spawn(setupTowerNPCPrompt)
 
 	task.spawn(function()
 		while true do

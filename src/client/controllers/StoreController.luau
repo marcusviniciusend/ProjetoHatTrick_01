@@ -281,7 +281,7 @@ local function setupPedestalVitrine(idx, slot)
     pedDisplays[idx] = { towerModel = towerModel }
 end
 
--- ── Descoberta do Hotspot ──────────────────────────────────────────────────
+-- ── Descoberta do TowerNPC ─────────────────────────────────────────────────
 local function hidePedestals()
     for _, ped in pairs(pedestals) do
         if ped:IsA("BasePart") then
@@ -297,7 +297,7 @@ end
 local function discoverHotspot()
     if hotspot then return true end
 
-    hotspot = Workspace:FindFirstChild("Hotspot")
+    hotspot = Workspace:FindFirstChild("TowerNPC")
     if not hotspot then return false end
     
     for i = 1, MAX_PEDESTAL_COUNT do
